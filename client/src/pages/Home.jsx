@@ -12,6 +12,7 @@ export default function Home() {
   const [sheetName, setSheetName] = useState(DEFAULT_SHEET_NAME);
   const [numTeams, setNumTeams] = useState(2);
   const [players, setPlayers] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
@@ -32,6 +33,7 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load');
       setPlayers(data);
+      setSelectedIds(new Set((data || []).map((p) => p.id)));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -51,9 +53,31 @@ export default function Home() {
     await loadPlayers(spreadsheetId, sheetName);
   }
 
+  function togglePlayer(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    if (players) setSelectedIds(new Set(players.map((p) => p.id)));
+  }
+
+  function deselectAll() {
+    setSelectedIds(new Set());
+  }
+
   async function handleGenerate() {
     if (!players || players.length === 0) {
       setError('Load players from the sheet first.');
+      return;
+    }
+    const selectedPlayers = players.filter((p) => selectedIds.has(p.id));
+    if (selectedPlayers.length === 0) {
+      setError('Select at least one player to generate teams.');
       return;
     }
     const n = Math.max(1, Math.min(20, parseInt(numTeams, 10) || 2));
@@ -64,7 +88,7 @@ export default function Home() {
       const res = await fetch(`${API}/teams`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ players, numTeams: n }),
+        body: JSON.stringify({ players: selectedPlayers, numTeams: n }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to generate');
@@ -114,14 +138,26 @@ export default function Home() {
 
         {players && (
           <section className={styles.card}>
-            <h2 className={styles.cardTitle}>2. Players loaded ({players.length})</h2>
+            <h2 className={styles.cardTitle}>2. Select who&apos;s playing ({selectedIds.size} of {players.length} selected)</h2>
+            <p className={styles.hint}>Click a player to include or exclude them. Only selected players are used when generating teams.</p>
+            <div className={styles.playerSelectRow}>
+              <button type="button" onClick={selectAll} className={styles.btnSmall}>Select all</button>
+              <button type="button" onClick={deselectAll} className={styles.btnSmall}>Deselect all</button>
+            </div>
             <div className={styles.playersPreview}>
-              {players.slice(0, 12).map((p) => (
-                <span key={p.id} className={styles.playerChip} data-rank={p.ranking}>
+              {players.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={selectedIds.has(p.id) ? styles.playerChip : styles.playerChipInactive}
+                  data-rank={p.ranking}
+                  onClick={() => togglePlayer(p.id)}
+                  title={selectedIds.has(p.id) ? 'Click to exclude' : 'Click to include'}
+                >
+                  {selectedIds.has(p.id) && <span className={styles.chipTick} aria-hidden>✓</span>}
                   {p.name} <em>{p.ranking}</em>
-                </span>
+                </button>
               ))}
-              {players.length > 12 && <span className={styles.more}>+{players.length - 12} more</span>}
             </div>
             <div className={styles.row}>
               <label className={styles.label}>

@@ -138,6 +138,27 @@
   background: linear-gradient(135deg, var(--accent), #7c3aed);
 }
 
+.playerSelectRow {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.btnSmall {
+  padding: 0.35rem 0.75rem;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.btnSmall:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
 .playersPreview {
   display: flex;
   flex-wrap: wrap;
@@ -145,18 +166,59 @@
   margin-bottom: 1rem;
 }
 
-.playerChip {
+.playerChip,
+.playerChipInactive {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.35rem 0.65rem;
-  background: var(--bg);
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
   border-radius: 999px;
   font-size: 0.8125rem;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s, border-color 0.15s, background 0.15s;
+  color: #fff;
 }
 
-.playerChip em {
+.chipTick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  font-size: 0.85em;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.playerChip {
+  background: linear-gradient(135deg, var(--accent-dim), #7c3aed);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.playerChip:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+  filter: brightness(1.1);
+}
+
+.playerChipInactive {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.playerChipInactive:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.playerChip em,
+.playerChipInactive em {
   font-style: normal;
   font-size: 0.7em;
   padding: 0.1rem 0.35rem;
@@ -164,11 +226,16 @@
   font-weight: 600;
 }
 
-.playerChip[data-rank="S"] em { background: var(--rank-s); color: #000; }
-.playerChip[data-rank="A"] em { background: var(--rank-a); color: #000; }
-.playerChip[data-rank="B"] em { background: var(--rank-b); color: #fff; }
-.playerChip[data-rank="C"] em { background: var(--rank-c); color: #000; }
-.playerChip[data-rank="Unranked"] em { background: var(--rank-u); color: #fff; }
+.playerChip[data-rank="S"] em,
+.playerChipInactive[data-rank="S"] em { background: var(--rank-s); color: #000; }
+.playerChip[data-rank="A"] em,
+.playerChipInactive[data-rank="A"] em { background: var(--rank-a); color: #000; }
+.playerChip[data-rank="B"] em,
+.playerChipInactive[data-rank="B"] em { background: var(--rank-b); color: #fff; }
+.playerChip[data-rank="C"] em,
+.playerChipInactive[data-rank="C"] em { background: var(--rank-c); color: #000; }
+.playerChip[data-rank="Unranked"] em,
+.playerChipInactive[data-rank="Unranked"] em { background: var(--rank-u); color: #fff; }
 
 .more {
   color: var(--text-muted);
