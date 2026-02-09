@@ -83,7 +83,7 @@ export default function Home() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Team Balancer</h1>
+        <h1 className={styles.title}>SKSST Woolwich - Sunday Goals Team Balancer</h1>
         <p className={styles.subtitle}>Load players from Google Sheets → balance into equal teams → share a link</p>
       </header>
 
