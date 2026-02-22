@@ -22,6 +22,19 @@ try {
   // dev mode: no dist yet
 }
 
+// API: verify admin password
+app.post('/api/admin/verify', (req, res) => {
+  const { password } = req.body;
+  if (!process.env.ADMIN_PASSWORD) {
+    return res.status(500).json({ error: 'ADMIN_PASSWORD not configured on server' });
+  }
+  if (password === process.env.ADMIN_PASSWORD) {
+    res.json({ ok: true });
+  } else {
+    res.status(401).json({ error: 'Wrong password' });
+  }
+});
+
 // API: fetch players from Google Sheet (proxy to avoid CORS)
 app.get('/api/players', async (req, res) => {
   const { spreadsheetId, sheetName = 'Sheet1' } = req.query;

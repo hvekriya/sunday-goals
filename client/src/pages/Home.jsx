@@ -27,6 +27,13 @@ export default function Home() {
   const [dragOverTeam, setDragOverTeam] = useState(null);
   const [dragOverPlayer, setDragOverPlayer] = useState(null);
 
+  // Admin auth
+  const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('isAdmin') === 'true');
+  const [showUnlock, setShowUnlock] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState('');
+  const [adminLoading, setAdminLoading] = useState(false);
+
   function extractIdFromUrl(url) {
     const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     return m ? m[1] : url.trim();
@@ -235,18 +242,86 @@ export default function Home() {
     setDragOverPlayer(null);
   }
 
+  async function handleUnlock(e) {
+    e.preventDefault();
+    setAdminLoading(true);
+    setAdminError('');
+    try {
+      const res = await fetch(`${API}/admin/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword }),
+      });
+      if (res.ok) {
+        sessionStorage.setItem('isAdmin', 'true');
+        setIsAdmin(true);
+        setShowUnlock(false);
+        setAdminPassword('');
+      } else {
+        setAdminError('Wrong password. Try again.');
+      }
+    } catch {
+      setAdminError('Could not reach server.');
+    } finally {
+      setAdminLoading(false);
+    }
+  }
+
+  function handleLockout() {
+    sessionStorage.removeItem('isAdmin');
+    setIsAdmin(false);
+  }
+
   const shareUrl = result?.slug
     ? `${window.location.origin}/t/${result.slug}`
     : '';
 
-  // Only show the generate form if there's no active session today, or the user explicitly wants to regenerate
-  const showGenerateForm = !todayLoading && (!todaySession || showGenerate);
+  // Only show the generate form if admin, no active session today (or explicitly regenerating)
+  const showGenerateForm = isAdmin && !todayLoading && (!todaySession || showGenerate);
 
   return (
     <div className={styles.page}>
+
+      {/* Admin unlock modal */}
+      {showUnlock && (
+        <div className={styles.modalOverlay} onClick={() => setShowUnlock(false)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 className={styles.modalTitle}>Admin login</h2>
+            <form onSubmit={handleUnlock}>
+              <input
+                type="password"
+                placeholder="Enter admin password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                className={styles.input}
+                autoFocus
+              />
+              {adminError && <p className={styles.modalError}>{adminError}</p>}
+              <div className={styles.modalActions}>
+                <button type="button" className={styles.btn} onClick={() => setShowUnlock(false)}>Cancel</button>
+                <button type="submit" className={styles.btnPrimary} disabled={adminLoading}>
+                  {adminLoading ? 'Checking…' : 'Unlock'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <header className={styles.header}>
         <h1 className={styles.title}>SKSST Woolwich - Sunday Goals Team Balancer</h1>
         <p className={styles.subtitle}>Load players from Google Sheets → balance into equal teams → share a link</p>
+        <div className={styles.adminBar}>
+          {isAdmin ? (
+            <button type="button" className={styles.adminBtn} onClick={handleLockout}>
+              Admin mode — lock
+            </button>
+          ) : (
+            <button type="button" className={styles.adminBtn} onClick={() => setShowUnlock(true)}>
+              Admin login
+            </button>
+          )}
+        </div>
       </header>
 
       <main className={styles.main}>
@@ -343,7 +418,7 @@ export default function Home() {
               {todaySession && (
                 <span className={styles.todayBadge}>Active · {todaySession.date}</span>
               )}
-              {todaySession && !showGenerate && (
+              {isAdmin && todaySession && !showGenerate && (
                 <button
                   type="button"
                   className={styles.regenBtn}
@@ -353,7 +428,7 @@ export default function Home() {
                 </button>
               )}
             </div>
-            <p className={styles.hint}>Drag a player onto another player to swap them, or drag to an empty area of a team to move them.</p>
+            {isAdmin && <p className={styles.hint}>Drag a player onto another player to swap them, or drag to an empty area of a team to move them.</p>}
             <div className={styles.shareBox}>
               <label className={styles.label}>Share this link</label>
               <div className={styles.shareRow}>
@@ -373,15 +448,13 @@ export default function Home() {
                   key={team.id}
                   className={[
                     styles.teamCard,
-                    dragOverTeam === team.id && drag.current?.fromTeamId !== team.id
+                    isAdmin && dragOverTeam === team.id && drag.current?.fromTeamId !== team.id
                       ? styles.teamCardOver
                       : '',
                   ].join(' ')}
-                  onDragOver={(e) => { e.preventDefault(); setDragOverTeam(team.id); }}
-                  onDragLeave={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget)) setDragOverTeam(null);
-                  }}
-                  onDrop={(e) => { e.preventDefault(); handleDropOnTeam(team.id); }}
+                  onDragOver={isAdmin ? (e) => { e.preventDefault(); setDragOverTeam(team.id); } : undefined}
+                  onDragLeave={isAdmin ? (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverTeam(null); } : undefined}
+                  onDrop={isAdmin ? (e) => { e.preventDefault(); handleDropOnTeam(team.id); } : undefined}
                 >
                   <h3 className={styles.teamName}>{team.name}</h3>
                   <p className={styles.teamPoints}>
@@ -393,29 +466,33 @@ export default function Home() {
                         key={p.id}
                         className={[
                           styles.teamPlayer,
-                          dragOverPlayer === p.id ? styles.teamPlayerOver : '',
+                          isAdmin && dragOverPlayer === p.id ? styles.teamPlayerOver : '',
                           p.paid ? styles.teamPlayerPaid : '',
                         ].join(' ')}
                         data-rank={p.ranking}
-                        draggable
-                        onDragStart={() => handleDragStart(p.id, team.id)}
-                        onDragEnd={handleDragEnd}
-                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverPlayer(p.id); setDragOverTeam(null); }}
-                        onDragLeave={() => setDragOverPlayer(null)}
-                        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnPlayer(p.id, team.id); }}
+                        draggable={isAdmin}
+                        onDragStart={isAdmin ? () => handleDragStart(p.id, team.id) : undefined}
+                        onDragEnd={isAdmin ? handleDragEnd : undefined}
+                        onDragOver={isAdmin ? (e) => { e.preventDefault(); e.stopPropagation(); setDragOverPlayer(p.id); setDragOverTeam(null); } : undefined}
+                        onDragLeave={isAdmin ? () => setDragOverPlayer(null) : undefined}
+                        onDrop={isAdmin ? (e) => { e.preventDefault(); e.stopPropagation(); handleDropOnPlayer(p.id, team.id); } : undefined}
                       >
-                        <span className={styles.dragHandle} aria-hidden>⠿</span>
+                        {isAdmin && <span className={styles.dragHandle} aria-hidden>⠿</span>}
                         {p.image ? <img src={p.image} alt="" className={styles.avatar} /> : <span className={styles.avatarPlaceholder} />}
                         <span className={styles.playerNameCell}>{p.name}</span>
                         <span className={styles.rank}>{p.ranking}</span>
-                        <button
-                          type="button"
-                          className={p.paid ? styles.paidBtn : styles.unpaidBtn}
-                          onClick={() => togglePaid(result.slug, team.id, p.id, !!p.paid)}
-                          title={p.paid ? 'Mark as unpaid' : 'Mark as paid'}
-                        >
-                          {p.paid ? '✓ Paid' : 'Unpaid'}
-                        </button>
+                        {isAdmin ? (
+                          <button
+                            type="button"
+                            className={p.paid ? styles.paidBtn : styles.unpaidBtn}
+                            onClick={() => togglePaid(result.slug, team.id, p.id, !!p.paid)}
+                            title={p.paid ? 'Mark as unpaid' : 'Mark as paid'}
+                          >
+                            {p.paid ? '✓ Paid' : 'Unpaid'}
+                          </button>
+                        ) : (
+                          p.paid && <span className={styles.paidBadge}>Paid</span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -428,9 +505,10 @@ export default function Home() {
         {history.length > 0 && (
           <section className={styles.card}>
             <h2 className={styles.cardTitle}>Past sessions</h2>
+            <p className={styles.hint}>Open a session to mark players as paid.</p>
             <ul className={styles.historyList}>
               {history.map((s) => {
-                const url = `${window.location.origin}/t/${s.slug}`;
+                const url = `/t/${s.slug}`;
                 const playerCount = s.teams.reduce((n, t) => n + t.players.length, 0);
                 const paidCount = s.teams.reduce((n, t) => n + t.players.filter((p) => p.paid).length, 0);
                 return (
@@ -439,11 +517,14 @@ export default function Home() {
                       <span className={styles.historyDate}>{s.date}</span>
                       <span className={styles.historyStats}>
                         {s.teams.length} teams · {playerCount} players
-                        {paidCount > 0 && <span className={styles.historyPaid}> · {paidCount} paid</span>}
+                        {paidCount > 0
+                          ? <span className={styles.historyPaid}> · {paidCount}/{playerCount} paid</span>
+                          : <span className={styles.historyUnpaid}> · none paid</span>
+                        }
                       </span>
                     </div>
-                    <a href={url} className={styles.historyLink} target="_blank" rel="noreferrer">
-                      {url}
+                    <a href={url} className={styles.historyOpenBtn}>
+                      Open session →
                     </a>
                   </li>
                 );
