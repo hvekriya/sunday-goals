@@ -77,17 +77,15 @@ export default function TeamView() {
         {session.teams.map((team) => (
           <div key={team.id} className={styles.teamCard}>
             <h2 className={styles.teamName}>{team.name}</h2>
-            <p className={styles.teamPoints}>{team.totalPoints} pts</p>
             <ul className={styles.teamList}>
               {team.players.map((p) => (
-                <li key={p.id} className={styles.teamPlayer} data-rank={p.ranking}>
+                <li key={p.id} className={styles.teamPlayer}>
                   {p.image ? (
                     <img src={p.image} alt="" className={styles.avatar} />
                   ) : (
                     <span className={styles.avatarPlaceholder} />
                   )}
                   <span className={styles.playerName}>{p.name}</span>
-                  <span className={styles.rank}>{p.ranking}</span>
                 </li>
               ))}
             </ul>
