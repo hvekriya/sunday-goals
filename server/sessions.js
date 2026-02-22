@@ -69,6 +69,14 @@ export async function getRecentSessions(limit = 20) {
   return data || [];
 }
 
+export async function updateTeams(slug, teams) {
+  const { error } = await supabase
+    .from('team_sessions')
+    .update({ teams })
+    .eq('slug', slug);
+  if (error) throw new Error(`Failed to update teams: ${error.message}`);
+}
+
 export async function updatePaidStatus(slug, teamId, playerId, paid) {
   const { data: row, error: fetchErr } = await supabase
     .from('team_sessions')

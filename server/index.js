@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { createBalancedTeams } from './teams.js';
 import { fetchPlayersFromSheet } from './sheets.js';
-import { getSessionBySlug, saveSession, getRecentSessions, updatePaidStatus, getSessionForToday } from './sessions.js';
+import { getSessionBySlug, saveSession, getRecentSessions, updatePaidStatus, updateTeams, getSessionForToday } from './sessions.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -86,6 +86,21 @@ app.get('/api/sessions', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Failed to load sessions' });
+  }
+});
+
+// API: update full teams array after drag-and-drop reorder
+app.patch('/api/teams/:slug/players', async (req, res) => {
+  const { teams } = req.body;
+  if (!Array.isArray(teams)) {
+    return res.status(400).json({ error: 'teams array required' });
+  }
+  try {
+    await updateTeams(req.params.slug, teams);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to update teams' });
   }
 });
 

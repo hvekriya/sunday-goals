@@ -18,6 +18,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
   const [teams, setTeams] = useState(null);
+  const teamsRef = useRef(null);
   const [history, setHistory] = useState([]);
   const [todaySession, setTodaySession] = useState(null);
   // when true, show the generate form even if today's session exists
@@ -72,7 +73,7 @@ export default function Home() {
       if (data) {
         setTodaySession(data);
         setResult({ slug: data.slug });
-        setTeams(data.teams.map((t) => ({ ...t, players: [...t.players] })));
+        applyTeams(data.teams.map((t) => ({ ...t, players: [...t.players] })));
       }
     } catch {
       // non-critical
@@ -140,7 +141,7 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to generate');
       setResult(data);
-      setTeams(data.teams.map((t) => ({ ...t, players: [...t.players] })));
+      applyTeams(data.teams.map((t) => ({ ...t, players: [...t.players] })));
       setTodaySession({ slug: data.slug, date: new Date().toISOString().slice(0, 10), teams: data.teams });
       setShowGenerate(false);
       loadHistory();
@@ -187,35 +188,60 @@ export default function Home() {
     setDragOverPlayer(null);
   }
 
+  function applyTeams(next) {
+    teamsRef.current = next;
+    setTeams(next);
+  }
+
+  async function persistTeams(slug, updatedTeams) {
+    if (!slug) {
+      console.warn('[persistTeams] no slug — skipping save');
+      return;
+    }
+    try {
+      const res = await fetch(`${API}/teams/${slug}/players`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teams: updatedTeams }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error('[persistTeams] server error:', res.status, err);
+      } else {
+        console.log('[persistTeams] saved OK for slug:', slug);
+      }
+    } catch (e) {
+      console.error('[persistTeams] fetch failed:', e);
+    }
+  }
+
   function handleDropOnPlayer(targetPlayerId, targetTeamId) {
     if (!drag.current) return;
     const { playerId: srcId, fromTeamId: srcTeamId } = drag.current;
     if (srcId === targetPlayerId) return;
 
-    setTeams((prev) => {
-      const next = prev.map((t) => ({ ...t, players: [...t.players] }));
-      const srcTeam = next.find((t) => t.id === srcTeamId);
-      const tgtTeam = next.find((t) => t.id === targetTeamId);
+    const prev = teamsRef.current;
+    const next = prev.map((t) => ({ ...t, players: [...t.players] }));
+    const srcTeam = next.find((t) => t.id === srcTeamId);
+    const tgtTeam = next.find((t) => t.id === targetTeamId);
 
-      const srcIdx = srcTeam.players.findIndex((p) => p.id === srcId);
-      const tgtIdx = tgtTeam.players.findIndex((p) => p.id === targetPlayerId);
+    const srcIdx = srcTeam.players.findIndex((p) => p.id === srcId);
+    const tgtIdx = tgtTeam.players.findIndex((p) => p.id === targetPlayerId);
 
-      const srcPlayer = srcTeam.players[srcIdx];
-      const tgtPlayer = tgtTeam.players[tgtIdx];
+    const srcPlayer = srcTeam.players[srcIdx];
+    const tgtPlayer = tgtTeam.players[tgtIdx];
 
-      if (srcTeamId === targetTeamId) {
-        // reorder within same team
-        srcTeam.players.splice(srcIdx, 1);
-        const insertAt = srcTeam.players.findIndex((p) => p.id === targetPlayerId);
-        srcTeam.players.splice(insertAt, 0, srcPlayer);
-      } else {
-        // swap across teams
-        srcTeam.players[srcIdx] = tgtPlayer;
-        tgtTeam.players[tgtIdx] = srcPlayer;
-      }
+    if (srcTeamId === targetTeamId) {
+      srcTeam.players.splice(srcIdx, 1);
+      const insertAt = srcTeam.players.findIndex((p) => p.id === targetPlayerId);
+      srcTeam.players.splice(insertAt, 0, srcPlayer);
+    } else {
+      srcTeam.players[srcIdx] = tgtPlayer;
+      tgtTeam.players[tgtIdx] = srcPlayer;
+    }
 
-      return next;
-    });
+    applyTeams(next);
+    persistTeams(result?.slug, next);
 
     drag.current = null;
     setDragOverTeam(null);
@@ -227,15 +253,16 @@ export default function Home() {
     const { playerId: srcId, fromTeamId: srcTeamId } = drag.current;
     if (srcTeamId === targetTeamId) return;
 
-    setTeams((prev) => {
-      const next = prev.map((t) => ({ ...t, players: [...t.players] }));
-      const srcTeam = next.find((t) => t.id === srcTeamId);
-      const tgtTeam = next.find((t) => t.id === targetTeamId);
-      const srcIdx = srcTeam.players.findIndex((p) => p.id === srcId);
-      const [moved] = srcTeam.players.splice(srcIdx, 1);
-      tgtTeam.players.push(moved);
-      return next;
-    });
+    const prev = teamsRef.current;
+    const next = prev.map((t) => ({ ...t, players: [...t.players] }));
+    const srcTeam = next.find((t) => t.id === srcTeamId);
+    const tgtTeam = next.find((t) => t.id === targetTeamId);
+    const srcIdx = srcTeam.players.findIndex((p) => p.id === srcId);
+    const [moved] = srcTeam.players.splice(srcIdx, 1);
+    tgtTeam.players.push(moved);
+
+    applyTeams(next);
+    persistTeams(result?.slug, next);
 
     drag.current = null;
     setDragOverTeam(null);
