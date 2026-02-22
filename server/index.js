@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
@@ -54,10 +55,15 @@ app.post('/api/teams', async (req, res) => {
 });
 
 // API: get session by slug (for shared URL)
-app.get('/api/teams/:slug', (req, res) => {
-  const session = getSessionBySlug(req.params.slug);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-  res.json(session);
+app.get('/api/teams/:slug', async (req, res) => {
+  try {
+    const session = await getSessionBySlug(req.params.slug);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    res.json(session);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to load session' });
+  }
 });
 
 // SPA fallback (only if we're serving static)

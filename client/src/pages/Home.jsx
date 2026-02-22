@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import styles from './Home.module.css';
 
 const API = '/api';
@@ -16,6 +16,11 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
+  const [teams, setTeams] = useState(null);
+  // drag: { playerId, fromTeamId }
+  const drag = useRef(null);
+  const [dragOverTeam, setDragOverTeam] = useState(null);
+  const [dragOverPlayer, setDragOverPlayer] = useState(null);
 
   function extractIdFromUrl(url) {
     const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -93,11 +98,77 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to generate');
       setResult(data);
+      setTeams(data.teams.map((t) => ({ ...t, players: [...t.players] })));
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleDragStart(playerId, fromTeamId) {
+    drag.current = { playerId, fromTeamId };
+  }
+
+  function handleDragEnd() {
+    drag.current = null;
+    setDragOverTeam(null);
+    setDragOverPlayer(null);
+  }
+
+  function handleDropOnPlayer(targetPlayerId, targetTeamId) {
+    if (!drag.current) return;
+    const { playerId: srcId, fromTeamId: srcTeamId } = drag.current;
+    if (srcId === targetPlayerId) return;
+
+    setTeams((prev) => {
+      const next = prev.map((t) => ({ ...t, players: [...t.players] }));
+      const srcTeam = next.find((t) => t.id === srcTeamId);
+      const tgtTeam = next.find((t) => t.id === targetTeamId);
+
+      const srcIdx = srcTeam.players.findIndex((p) => p.id === srcId);
+      const tgtIdx = tgtTeam.players.findIndex((p) => p.id === targetPlayerId);
+
+      const srcPlayer = srcTeam.players[srcIdx];
+      const tgtPlayer = tgtTeam.players[tgtIdx];
+
+      if (srcTeamId === targetTeamId) {
+        // reorder within same team
+        srcTeam.players.splice(srcIdx, 1);
+        const insertAt = srcTeam.players.findIndex((p) => p.id === targetPlayerId);
+        srcTeam.players.splice(insertAt, 0, srcPlayer);
+      } else {
+        // swap across teams
+        srcTeam.players[srcIdx] = tgtPlayer;
+        tgtTeam.players[tgtIdx] = srcPlayer;
+      }
+
+      return next;
+    });
+
+    drag.current = null;
+    setDragOverTeam(null);
+    setDragOverPlayer(null);
+  }
+
+  function handleDropOnTeam(targetTeamId) {
+    if (!drag.current) return;
+    const { playerId: srcId, fromTeamId: srcTeamId } = drag.current;
+    if (srcTeamId === targetTeamId) return;
+
+    setTeams((prev) => {
+      const next = prev.map((t) => ({ ...t, players: [...t.players] }));
+      const srcTeam = next.find((t) => t.id === srcTeamId);
+      const tgtTeam = next.find((t) => t.id === targetTeamId);
+      const srcIdx = srcTeam.players.findIndex((p) => p.id === srcId);
+      const [moved] = srcTeam.players.splice(srcIdx, 1);
+      tgtTeam.players.push(moved);
+      return next;
+    });
+
+    drag.current = null;
+    setDragOverTeam(null);
+    setDragOverPlayer(null);
   }
 
   const shareUrl = result?.slug
@@ -180,18 +251,17 @@ export default function Home() {
 
         {error && <div className={styles.error}>{error}</div>}
 
-        {result && (
+        {result && teams && (
           <section className={styles.card}>
             <h2 className={styles.cardTitle}>Today&apos;s teams</h2>
+            <p className={styles.hint}>Drag a player onto another player to swap them, or drag to an empty area of a team to move them.</p>
             <div className={styles.shareBox}>
               <label className={styles.label}>Share this link</label>
               <div className={styles.shareRow}>
                 <input readOnly value={shareUrl} className={styles.input} />
                 <button
                   className={styles.btn}
-                  onClick={() => {
-                    navigator.clipboard.writeText(shareUrl);
-                  }}
+                  onClick={() => navigator.clipboard.writeText(shareUrl)}
                 >
                   Copy
                 </button>
@@ -199,13 +269,42 @@ export default function Home() {
               <p className={styles.meta}>Link generated on {new Date().toLocaleDateString()} — unique URL for this session.</p>
             </div>
             <div className={styles.teamsGrid}>
-              {result.teams.map((team) => (
-                <div key={team.id} className={styles.teamCard}>
+              {teams.map((team) => (
+                <div
+                  key={team.id}
+                  className={[
+                    styles.teamCard,
+                    dragOverTeam === team.id && drag.current?.fromTeamId !== team.id
+                      ? styles.teamCardOver
+                      : '',
+                  ].join(' ')}
+                  onDragOver={(e) => { e.preventDefault(); setDragOverTeam(team.id); }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget)) setDragOverTeam(null);
+                  }}
+                  onDrop={(e) => { e.preventDefault(); handleDropOnTeam(team.id); }}
+                >
                   <h3 className={styles.teamName}>{team.name}</h3>
-                  <p className={styles.teamPoints}>Total: {team.totalPoints} pts</p>
+                  <p className={styles.teamPoints}>
+                    {team.players.reduce((s, p) => s + (p.points ?? 0), 0)} pts
+                  </p>
                   <ul className={styles.teamList}>
                     {team.players.map((p) => (
-                      <li key={p.id} className={styles.teamPlayer} data-rank={p.ranking}>
+                      <li
+                        key={p.id}
+                        className={[
+                          styles.teamPlayer,
+                          dragOverPlayer === p.id ? styles.teamPlayerOver : '',
+                        ].join(' ')}
+                        data-rank={p.ranking}
+                        draggable
+                        onDragStart={() => handleDragStart(p.id, team.id)}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverPlayer(p.id); setDragOverTeam(null); }}
+                        onDragLeave={() => setDragOverPlayer(null)}
+                        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnPlayer(p.id, team.id); }}
+                      >
+                        <span className={styles.dragHandle} aria-hidden>⠿</span>
                         {p.image ? <img src={p.image} alt="" className={styles.avatar} /> : <span className={styles.avatarPlaceholder} />}
                         <span>{p.name}</span>
                         <span className={styles.rank}>{p.ranking}</span>

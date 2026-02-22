@@ -1,19 +1,29 @@
+import { createClient } from '@supabase/supabase-js';
 import { nanoid } from 'nanoid';
 
-const sessions = new Map();
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+);
 
-export function saveSession(teams) {
+export async function saveSession(teams) {
   const slug = nanoid(10);
-  const session = {
+  const { error } = await supabase.from('team_sessions').insert({
     slug,
     date: new Date().toISOString().slice(0, 10),
-    createdAt: new Date().toISOString(),
+    created_at: new Date().toISOString(),
     teams,
-  };
-  sessions.set(slug, session);
+  });
+  if (error) throw new Error(`Failed to save session: ${error.message}`);
   return slug;
 }
 
-export function getSessionBySlug(slug) {
-  return sessions.get(slug) || null;
+export async function getSessionBySlug(slug) {
+  const { data, error } = await supabase
+    .from('team_sessions')
+    .select('*')
+    .eq('slug', slug)
+    .single();
+  if (error || !data) return null;
+  return data;
 }

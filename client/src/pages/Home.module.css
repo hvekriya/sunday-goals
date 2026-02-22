@@ -284,6 +284,12 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.teamCardOver {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.25);
 }
 
 .teamName {
@@ -310,13 +316,38 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.4rem 0;
+  padding: 0.4rem 0.25rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.9375rem;
+  cursor: grab;
+  border-radius: 6px;
+  transition: background 0.1s;
 }
 
 .teamPlayer:last-child {
   border-bottom: none;
+}
+
+.teamPlayer:active {
+  cursor: grabbing;
+}
+
+.teamPlayerOver {
+  background: rgba(129, 140, 248, 0.15);
+  border-bottom-color: var(--accent);
+}
+
+.dragHandle {
+  color: var(--text-muted);
+  font-size: 1rem;
+  opacity: 0.4;
+  flex-shrink: 0;
+  user-select: none;
+  cursor: grab;
+}
+
+.teamPlayer:hover .dragHandle {
+  opacity: 0.8;
 }
 
 .avatar {
