@@ -61,7 +61,6 @@ export default function TeamView() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <Link to="/" className={styles.back}>← Balancer</Link>
         <h1 className={styles.title}>Today&apos;s teams</h1>
         <p className={styles.date}>Generated {session.date} — share this link: <strong className={styles.url}>{shareUrl}</strong></p>
         <button
