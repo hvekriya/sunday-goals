@@ -85,6 +85,7 @@ export default function TeamView() {
                     <span className={styles.avatarPlaceholder} />
                   )}
                   <span className={styles.playerName}>{p.name}</span>
+                  {p.paid && <span className={styles.paidBadge}>Paid</span>}
                 </li>
               ))}
             </ul>

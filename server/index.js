@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { createBalancedTeams } from './teams.js';
 import { fetchPlayersFromSheet } from './sheets.js';
-import { getSessionBySlug, saveSession } from './sessions.js';
+import { getSessionBySlug, saveSession, getRecentSessions, updatePaidStatus, getSessionForToday } from './sessions.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -46,11 +46,48 @@ app.post('/api/teams', async (req, res) => {
   }
   try {
     const teams = createBalancedTeams(players, numTeams);
-    const slug = await saveSession(teams);
-    res.json({ teams, slug });
+    const { slug, replaced } = await saveSession(teams);
+    res.json({ teams, slug, replaced });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Failed to generate teams' });
+  }
+});
+
+// API: today's session (if any)
+app.get('/api/sessions/today', async (req, res) => {
+  try {
+    const session = await getSessionForToday();
+    res.json(session || null);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to load today\'s session' });
+  }
+});
+
+// API: recent sessions (history)
+app.get('/api/sessions', async (req, res) => {
+  try {
+    const sessions = await getRecentSessions(20);
+    res.json(sessions);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to load sessions' });
+  }
+});
+
+// API: update paid status for a player in a session
+app.patch('/api/teams/:slug/paid', async (req, res) => {
+  const { teamId, playerId, paid } = req.body;
+  if (!teamId || !playerId || typeof paid !== 'boolean') {
+    return res.status(400).json({ error: 'teamId, playerId and paid (boolean) required' });
+  }
+  try {
+    await updatePaidStatus(req.params.slug, teamId, playerId, paid);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to update paid status' });
   }
 });
 

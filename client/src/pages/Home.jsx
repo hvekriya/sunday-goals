@@ -14,9 +14,14 @@ export default function Home() {
   const [players, setPlayers] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [loading, setLoading] = useState(false);
+  const [todayLoading, setTodayLoading] = useState(true);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
   const [teams, setTeams] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [todaySession, setTodaySession] = useState(null);
+  // when true, show the generate form even if today's session exists
+  const [showGenerate, setShowGenerate] = useState(false);
   // drag: { playerId, fromTeamId }
   const drag = useRef(null);
   const [dragOverTeam, setDragOverTeam] = useState(null);
@@ -47,8 +52,38 @@ export default function Home() {
   }
 
   useEffect(() => {
-    loadPlayers(DEFAULT_SPREADSHEET_ID, DEFAULT_SHEET_NAME);
+    loadHistory();
+    loadTodaySession();
   }, []);
+
+  async function loadTodaySession() {
+    setTodayLoading(true);
+    try {
+      const res = await fetch(`${API}/sessions/today`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data) {
+        setTodaySession(data);
+        setResult({ slug: data.slug });
+        setTeams(data.teams.map((t) => ({ ...t, players: [...t.players] })));
+      }
+    } catch {
+      // non-critical
+    } finally {
+      setTodayLoading(false);
+    }
+  }
+
+  async function loadHistory() {
+    try {
+      const res = await fetch(`${API}/sessions`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setHistory(data);
+    } catch {
+      // history is non-critical, fail silently
+    }
+  }
 
   async function handleLoad() {
     if (!extractIdFromUrl(spreadsheetId)) {
@@ -99,10 +134,39 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || 'Failed to generate');
       setResult(data);
       setTeams(data.teams.map((t) => ({ ...t, players: [...t.players] })));
+      setTodaySession({ slug: data.slug, date: new Date().toISOString().slice(0, 10), teams: data.teams });
+      setShowGenerate(false);
+      loadHistory();
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function togglePaid(slug, teamId, playerId, currentPaid) {
+    const paid = !currentPaid;
+    // optimistic update
+    setTeams((prev) =>
+      prev.map((t) => {
+        if (t.id !== teamId) return t;
+        return { ...t, players: t.players.map((p) => p.id === playerId ? { ...p, paid } : p) };
+      })
+    );
+    try {
+      await fetch(`${API}/teams/${slug}/paid`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamId, playerId, paid }),
+      });
+    } catch {
+      // revert on failure
+      setTeams((prev) =>
+        prev.map((t) => {
+          if (t.id !== teamId) return t;
+          return { ...t, players: t.players.map((p) => p.id === playerId ? { ...p, paid: currentPaid } : p) };
+        })
+      );
     }
   }
 
@@ -175,6 +239,9 @@ export default function Home() {
     ? `${window.location.origin}/t/${result.slug}`
     : '';
 
+  // Only show the generate form if there's no active session today, or the user explicitly wants to regenerate
+  const showGenerateForm = !todayLoading && (!todaySession || showGenerate);
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -183,77 +250,109 @@ export default function Home() {
       </header>
 
       <main className={styles.main}>
-        <section className={styles.card}>
-          <h2 className={styles.cardTitle}>1. Google Sheet</h2>
-          <p className={styles.hint}>Share the sheet as &quot;Anyone with the link can view&quot;. Use columns: <strong>Name</strong>, <strong>Rank</strong> (S highest, then A, B, C, Unranked), <strong>Image</strong> (optional URL).</p>
-          <div className={styles.row}>
-            <input
-              type="text"
-              placeholder="Spreadsheet ID or full Google Sheet URL"
-              value={spreadsheetId}
-              onChange={(e) => setSpreadsheetId(e.target.value)}
-              className={styles.input}
-            />
-            <input
-              type="text"
-              placeholder="Sheet name"
-              value={sheetName}
-              onChange={(e) => setSheetName(e.target.value)}
-              className={styles.inputShort}
-            />
-            <button onClick={handleLoad} disabled={loading} className={styles.btn}>
-              {loading && !players ? 'Loading…' : 'Load players'}
-            </button>
-          </div>
-        </section>
 
-        {players && (
-          <section className={styles.card}>
-            <h2 className={styles.cardTitle}>2. Select who&apos;s playing ({selectedIds.size} of {players.length} selected)</h2>
-            <p className={styles.hint}>Click a player to include or exclude them. Only selected players are used when generating teams.</p>
-            <div className={styles.playerSelectRow}>
-              <button type="button" onClick={selectAll} className={styles.btnSmall}>Select all</button>
-              <button type="button" onClick={deselectAll} className={styles.btnSmall}>Deselect all</button>
-            </div>
-            <div className={styles.playersPreview}>
-              {players.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={selectedIds.has(p.id) ? styles.playerChip : styles.playerChipInactive}
-                  data-rank={p.ranking}
-                  onClick={() => togglePlayer(p.id)}
-                  title={selectedIds.has(p.id) ? 'Click to exclude' : 'Click to include'}
-                >
-                  {selectedIds.has(p.id) && <span className={styles.chipTick} aria-hidden>✓</span>}
-                  {p.name} <em>{p.ranking}</em>
-                </button>
-              ))}
-            </div>
-            <div className={styles.row}>
-              <label className={styles.label}>
-                Number of teams
+        {todayLoading && (
+          <div className={styles.todayLoading}>Checking for today&apos;s session…</div>
+        )}
+
+        {showGenerateForm && (
+          <>
+            <section className={styles.card}>
+              <h2 className={styles.cardTitle}>1. Google Sheet</h2>
+              <p className={styles.hint}>Share the sheet as &quot;Anyone with the link can view&quot;. Use columns: <strong>Name</strong>, <strong>Rank</strong> (S highest, then A, B, C, Unranked), <strong>Image</strong> (optional URL).</p>
+              <div className={styles.row}>
                 <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={numTeams}
-                  onChange={(e) => setNumTeams(parseInt(e.target.value, 10) || 2)}
-                  className={styles.inputNum}
+                  type="text"
+                  placeholder="Spreadsheet ID or full Google Sheet URL"
+                  value={spreadsheetId}
+                  onChange={(e) => setSpreadsheetId(e.target.value)}
+                  className={styles.input}
                 />
-              </label>
-              <button onClick={handleGenerate} disabled={loading} className={styles.btnPrimary}>
-                {loading && result === null ? 'Generating…' : 'Generate teams'}
-              </button>
-            </div>
-          </section>
+                <input
+                  type="text"
+                  placeholder="Sheet name"
+                  value={sheetName}
+                  onChange={(e) => setSheetName(e.target.value)}
+                  className={styles.inputShort}
+                />
+                <button onClick={handleLoad} disabled={loading} className={styles.btn}>
+                  {loading && !players ? 'Loading…' : 'Load players'}
+                </button>
+              </div>
+              {showGenerate && todaySession && (
+                <button
+                  type="button"
+                  className={styles.cancelRegenBtn}
+                  onClick={() => setShowGenerate(false)}
+                >
+                  ← Cancel, keep today&apos;s teams
+                </button>
+              )}
+            </section>
+
+            {players && (
+              <section className={styles.card}>
+                <h2 className={styles.cardTitle}>2. Select who&apos;s playing ({selectedIds.size} of {players.length} selected)</h2>
+                <p className={styles.hint}>Click a player to include or exclude them. Only selected players are used when generating teams.</p>
+                <div className={styles.playerSelectRow}>
+                  <button type="button" onClick={selectAll} className={styles.btnSmall}>Select all</button>
+                  <button type="button" onClick={deselectAll} className={styles.btnSmall}>Deselect all</button>
+                </div>
+                <div className={styles.playersPreview}>
+                  {players.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={selectedIds.has(p.id) ? styles.playerChip : styles.playerChipInactive}
+                      data-rank={p.ranking}
+                      onClick={() => togglePlayer(p.id)}
+                      title={selectedIds.has(p.id) ? 'Click to exclude' : 'Click to include'}
+                    >
+                      {selectedIds.has(p.id) && <span className={styles.chipTick} aria-hidden>✓</span>}
+                      {p.name} <em>{p.ranking}</em>
+                    </button>
+                  ))}
+                </div>
+                <div className={styles.row}>
+                  <label className={styles.label}>
+                    Number of teams
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={numTeams}
+                      onChange={(e) => setNumTeams(parseInt(e.target.value, 10) || 2)}
+                      className={styles.inputNum}
+                    />
+                  </label>
+                  <button onClick={handleGenerate} disabled={loading} className={styles.btnPrimary}>
+                    {loading ? 'Generating…' : showGenerate && todaySession ? 'Regenerate teams' : 'Generate teams'}
+                  </button>
+                </div>
+              </section>
+            )}
+          </>
         )}
 
         {error && <div className={styles.error}>{error}</div>}
 
         {result && teams && (
           <section className={styles.card}>
-            <h2 className={styles.cardTitle}>Today&apos;s teams</h2>
+            <div className={styles.cardTitleRow}>
+              <h2 className={styles.cardTitle}>Today&apos;s teams</h2>
+              {todaySession && (
+                <span className={styles.todayBadge}>Active · {todaySession.date}</span>
+              )}
+              {todaySession && !showGenerate && (
+                <button
+                  type="button"
+                  className={styles.regenBtn}
+                  onClick={() => { setShowGenerate(true); loadPlayers(DEFAULT_SPREADSHEET_ID, DEFAULT_SHEET_NAME); }}
+                >
+                  Regenerate
+                </button>
+              )}
+            </div>
             <p className={styles.hint}>Drag a player onto another player to swap them, or drag to an empty area of a team to move them.</p>
             <div className={styles.shareBox}>
               <label className={styles.label}>Share this link</label>
@@ -295,6 +394,7 @@ export default function Home() {
                         className={[
                           styles.teamPlayer,
                           dragOverPlayer === p.id ? styles.teamPlayerOver : '',
+                          p.paid ? styles.teamPlayerPaid : '',
                         ].join(' ')}
                         data-rank={p.ranking}
                         draggable
@@ -306,8 +406,16 @@ export default function Home() {
                       >
                         <span className={styles.dragHandle} aria-hidden>⠿</span>
                         {p.image ? <img src={p.image} alt="" className={styles.avatar} /> : <span className={styles.avatarPlaceholder} />}
-                        <span>{p.name}</span>
+                        <span className={styles.playerNameCell}>{p.name}</span>
                         <span className={styles.rank}>{p.ranking}</span>
+                        <button
+                          type="button"
+                          className={p.paid ? styles.paidBtn : styles.unpaidBtn}
+                          onClick={() => togglePaid(result.slug, team.id, p.id, !!p.paid)}
+                          title={p.paid ? 'Mark as unpaid' : 'Mark as paid'}
+                        >
+                          {p.paid ? '✓ Paid' : 'Unpaid'}
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -315,6 +423,32 @@ export default function Home() {
               ))}
             </div>
             <a href={shareUrl} className={styles.viewLink}>Open shareable view →</a>
+          </section>
+        )}
+        {history.length > 0 && (
+          <section className={styles.card}>
+            <h2 className={styles.cardTitle}>Past sessions</h2>
+            <ul className={styles.historyList}>
+              {history.map((s) => {
+                const url = `${window.location.origin}/t/${s.slug}`;
+                const playerCount = s.teams.reduce((n, t) => n + t.players.length, 0);
+                const paidCount = s.teams.reduce((n, t) => n + t.players.filter((p) => p.paid).length, 0);
+                return (
+                  <li key={s.slug} className={styles.historyItem}>
+                    <div className={styles.historyMeta}>
+                      <span className={styles.historyDate}>{s.date}</span>
+                      <span className={styles.historyStats}>
+                        {s.teams.length} teams · {playerCount} players
+                        {paidCount > 0 && <span className={styles.historyPaid}> · {paidCount} paid</span>}
+                      </span>
+                    </div>
+                    <a href={url} className={styles.historyLink} target="_blank" rel="noreferrer">
+                      {url}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
           </section>
         )}
       </main>
