@@ -7,9 +7,12 @@ const API = '/api';
 export default function TeamView() {
   const { slug } = useParams();
   const [teams, setTeams] = useState(null);
+  const [playerPool, setPlayerPool] = useState([]);
   const [date, setDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const [replaceTarget, setReplaceTarget] = useState(null);
 
   const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('isAdmin') === 'true');
   const [showUnlock, setShowUnlock] = useState(false);
@@ -29,6 +32,7 @@ export default function TeamView() {
           return;
         }
         setTeams(data.teams.map((t) => ({ ...t, players: [...t.players] })));
+        setPlayerPool(Array.isArray(data.player_pool) ? data.player_pool : []);
         setDate(data.date);
         setError('');
       } catch (e) {
@@ -93,6 +97,44 @@ export default function TeamView() {
     }
   }
 
+  const RANK_POINTS = { S: 4, A: 3, B: 2, C: 1, Unranked: 0 };
+
+  async function handleReplaceWith(teamId, outPlayer, inPlayer) {
+    const nextTeams = teams.map((t) => ({ ...t, players: [...t.players] }));
+    const team = nextTeams.find((t) => t.id === teamId);
+    const idx = team.players.findIndex((p) => p.id === outPlayer.id);
+    if (idx === -1) return;
+
+    const newPlayer = {
+      ...inPlayer,
+      points: RANK_POINTS[inPlayer.ranking] ?? 0,
+      paid: outPlayer.paid ?? false,
+    };
+    const backToPool = { ...outPlayer };
+    delete backToPool.paid;
+    delete backToPool.points;
+
+    team.players[idx] = newPlayer;
+    const nextPool = playerPool.filter((p) => p.id !== inPlayer.id);
+    nextPool.push(backToPool);
+
+    setTeams(nextTeams);
+    setPlayerPool(nextPool);
+
+    try {
+      await fetch(`${API}/teams/${slug}/players`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teams: nextTeams, playerPool: nextPool }),
+      });
+    } catch {
+      // revert on failure
+      setTeams(teams);
+      setPlayerPool(playerPool);
+    }
+    setReplaceTarget(null);
+  }
+
   const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/t/${slug}` : '';
 
   if (loading) {
@@ -119,6 +161,40 @@ export default function TeamView() {
 
   return (
     <div className={styles.page}>
+
+      {replaceTarget && (
+        <div className={styles.modalOverlay} onClick={() => setReplaceTarget(null)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 className={styles.modalTitle}>Replace {replaceTarget.player.name}</h2>
+            <p className={styles.hint}>Pick a player from the pool to swap in:</p>
+            <ul className={styles.poolList}>
+              {playerPool.map((poolPlayer) => (
+                <li key={poolPlayer.id} className={styles.poolItem}>
+                  <button
+                    type="button"
+                    className={styles.poolBtn}
+                    data-rank={poolPlayer.ranking}
+                    onClick={() => handleReplaceWith(replaceTarget.teamId, replaceTarget.player, poolPlayer)}
+                  >
+                    {poolPlayer.image ? (
+                      <img src={poolPlayer.image} alt="" className={styles.avatar} />
+                    ) : (
+                      <span className={styles.avatarPlaceholder} />
+                    )}
+                    <span>{poolPlayer.name}</span>
+                    <em>{poolPlayer.ranking}</em>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className={styles.modalActions}>
+              <button type="button" className={styles.btn} onClick={() => setReplaceTarget(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showUnlock && (
         <div className={styles.modalOverlay} onClick={() => setShowUnlock(false)}>
@@ -190,14 +266,26 @@ export default function TeamView() {
                   )}
                   <span className={styles.playerName}>{p.name}</span>
                   {isAdmin ? (
-                    <button
-                      type="button"
-                      className={p.paid ? styles.paidBtn : styles.unpaidBtn}
-                      onClick={() => togglePaid(team.id, p.id, !!p.paid)}
-                      title={p.paid ? 'Mark as unpaid' : 'Mark as paid'}
-                    >
-                      {p.paid ? '✓ Paid' : 'Unpaid'}
-                    </button>
+                    <span className={styles.playerActions}>
+                      {playerPool.length > 0 && (
+                        <button
+                          type="button"
+                          className={styles.replaceBtn}
+                          onClick={() => setReplaceTarget({ teamId: team.id, player: p })}
+                          title="Replace with someone from the pool"
+                        >
+                          Replace
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className={p.paid ? styles.paidBtn : styles.unpaidBtn}
+                        onClick={() => togglePaid(team.id, p.id, !!p.paid)}
+                        title={p.paid ? 'Mark as unpaid' : 'Mark as paid'}
+                      >
+                        {p.paid ? '✓ Paid' : 'Unpaid'}
+                      </button>
+                    </span>
                   ) : (
                     p.paid && <span className={styles.paidBadge}>Paid</span>
                   )}

@@ -18,6 +18,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
   const [teams, setTeams] = useState(null);
+  const [playerPool, setPlayerPool] = useState([]);
   const teamsRef = useRef(null);
   const [history, setHistory] = useState([]);
   const [todaySession, setTodaySession] = useState(null);
@@ -27,6 +28,9 @@ export default function Home() {
   const drag = useRef(null);
   const [dragOverTeam, setDragOverTeam] = useState(null);
   const [dragOverPlayer, setDragOverPlayer] = useState(null);
+
+  // Replace modal: { teamId, player }
+  const [replaceTarget, setReplaceTarget] = useState(null);
 
   // Admin auth
   const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('isAdmin') === 'true');
@@ -74,6 +78,7 @@ export default function Home() {
         setTodaySession(data);
         setResult({ slug: data.slug });
         applyTeams(data.teams.map((t) => ({ ...t, players: [...t.players] })));
+        setPlayerPool(Array.isArray(data.player_pool) ? data.player_pool : []);
       }
     } catch {
       // non-critical
@@ -136,13 +141,23 @@ export default function Home() {
       const res = await fetch(`${API}/teams`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ players: selectedPlayers, numTeams: n }),
+        body: JSON.stringify({
+          players: selectedPlayers,
+          numTeams: n,
+          playerPool: players.filter((p) => !selectedIds.has(p.id)),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to generate');
       setResult(data);
       applyTeams(data.teams.map((t) => ({ ...t, players: [...t.players] })));
-      setTodaySession({ slug: data.slug, date: new Date().toISOString().slice(0, 10), teams: data.teams });
+      setPlayerPool(Array.isArray(data.playerPool) ? data.playerPool : []);
+      setTodaySession({
+        slug: data.slug,
+        date: new Date().toISOString().slice(0, 10),
+        teams: data.teams,
+        player_pool: data.playerPool || [],
+      });
       setShowGenerate(false);
       loadHistory();
     } catch (e) {
@@ -193,16 +208,20 @@ export default function Home() {
     setTeams(next);
   }
 
-  async function persistTeams(slug, updatedTeams) {
+  const RANK_POINTS = { S: 4, A: 3, B: 2, C: 1, Unranked: 0 };
+
+  async function persistTeams(slug, updatedTeams, updatedPool) {
     if (!slug) {
       console.warn('[persistTeams] no slug — skipping save');
       return;
     }
+    const body = { teams: updatedTeams };
+    if (updatedPool !== undefined) body.playerPool = updatedPool;
     try {
       const res = await fetch(`${API}/teams/${slug}/players`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teams: updatedTeams }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -246,6 +265,30 @@ export default function Home() {
     drag.current = null;
     setDragOverTeam(null);
     setDragOverPlayer(null);
+  }
+
+  function handleReplaceWith(teamId, outPlayer, inPlayer) {
+    const nextTeams = teamsRef.current.map((t) => ({ ...t, players: [...t.players] }));
+    const team = nextTeams.find((t) => t.id === teamId);
+    const idx = team.players.findIndex((p) => p.id === outPlayer.id);
+    if (idx === -1) return;
+
+    const newPlayer = {
+      ...inPlayer,
+      points: RANK_POINTS[inPlayer.ranking] ?? 0,
+      paid: outPlayer.paid ?? false,
+    };
+    const backToPool = { ...outPlayer };
+    delete backToPool.paid;
+    delete backToPool.points;
+
+    team.players[idx] = newPlayer;
+    const nextPool = [...playerPool.filter((p) => p.id !== inPlayer.id), backToPool];
+
+    applyTeams(nextTeams);
+    setPlayerPool(nextPool);
+    persistTeams(result?.slug, nextTeams, nextPool);
+    setReplaceTarget(null);
   }
 
   function handleDropOnTeam(targetTeamId) {
@@ -308,6 +351,41 @@ export default function Home() {
 
   return (
     <div className={styles.page}>
+
+      {/* Replace player modal */}
+      {replaceTarget && (
+        <div className={styles.modalOverlay} onClick={() => setReplaceTarget(null)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 className={styles.modalTitle}>Replace {replaceTarget.player.name}</h2>
+            <p className={styles.hint}>Pick a player from the pool to swap in:</p>
+            <ul className={styles.poolList}>
+              {playerPool.map((poolPlayer) => (
+                <li key={poolPlayer.id} className={styles.poolItem}>
+                  <button
+                    type="button"
+                    className={styles.poolBtn}
+                    data-rank={poolPlayer.ranking}
+                    onClick={() => handleReplaceWith(replaceTarget.teamId, replaceTarget.player, poolPlayer)}
+                  >
+                    {poolPlayer.image ? (
+                      <img src={poolPlayer.image} alt="" className={styles.avatar} />
+                    ) : (
+                      <span className={styles.avatarPlaceholder} />
+                    )}
+                    <span>{poolPlayer.name}</span>
+                    <em>{poolPlayer.ranking}</em>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className={styles.modalActions}>
+              <button type="button" className={styles.btn} onClick={() => setReplaceTarget(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Admin unlock modal */}
       {showUnlock && (
@@ -455,7 +533,12 @@ export default function Home() {
                 </button>
               )}
             </div>
-            {isAdmin && <p className={styles.hint}>Drag a player onto another player to swap them, or drag to an empty area of a team to move them.</p>}
+            {isAdmin && (
+              <p className={styles.hint}>
+                Drag a player onto another player to swap them, or drag to an empty area of a team to move them.
+                {playerPool.length > 0 && ' Use Replace to swap a player with someone from the pool.'}
+              </p>
+            )}
             <div className={styles.shareBox}>
               <label className={styles.label}>Share this link</label>
               <div className={styles.shareRow}>
@@ -509,14 +592,26 @@ export default function Home() {
                         <span className={styles.playerNameCell}>{p.name}</span>
                         <span className={styles.rank}>{p.ranking}</span>
                         {isAdmin ? (
-                          <button
-                            type="button"
-                            className={p.paid ? styles.paidBtn : styles.unpaidBtn}
-                            onClick={() => togglePaid(result.slug, team.id, p.id, !!p.paid)}
-                            title={p.paid ? 'Mark as unpaid' : 'Mark as paid'}
-                          >
-                            {p.paid ? '✓ Paid' : 'Unpaid'}
-                          </button>
+                          <span className={styles.playerActions}>
+                            {playerPool.length > 0 && (
+                              <button
+                                type="button"
+                                className={styles.replaceBtn}
+                                onClick={() => setReplaceTarget({ teamId: team.id, player: p })}
+                                title="Replace with someone from the pool"
+                              >
+                                Replace
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className={p.paid ? styles.paidBtn : styles.unpaidBtn}
+                              onClick={() => togglePaid(result.slug, team.id, p.id, !!p.paid)}
+                              title={p.paid ? 'Mark as unpaid' : 'Mark as paid'}
+                            >
+                              {p.paid ? '✓ Paid' : 'Unpaid'}
+                            </button>
+                          </span>
                         ) : (
                           p.paid && <span className={styles.paidBadge}>Paid</span>
                         )}

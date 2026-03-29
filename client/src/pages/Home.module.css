@@ -521,6 +521,80 @@
   flex: 1;
 }
 
+.playerActions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.replaceBtn {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid rgba(129, 140, 248, 0.5);
+  background: rgba(129, 140, 248, 0.15);
+  color: var(--accent);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.replaceBtn:hover {
+  background: rgba(129, 140, 248, 0.25);
+}
+
+.poolList {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.poolItem {
+  margin: 0;
+}
+
+.poolBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.9375rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.poolBtn:hover {
+  border-color: var(--accent);
+  background: rgba(129, 140, 248, 0.1);
+}
+
+.poolBtn em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.poolBtn[data-rank="S"] em { background: var(--rank-s); color: #000; }
+.poolBtn[data-rank="A"] em { background: var(--rank-a); color: #000; }
+.poolBtn[data-rank="B"] em { background: var(--rank-b); color: #fff; }
+.poolBtn[data-rank="C"] em { background: var(--rank-c); color: #000; }
+.poolBtn[data-rank="Unranked"] em { background: var(--rank-u); color: #fff; }
+
 .paidBtn,
 .unpaidBtn {
   flex-shrink: 0;

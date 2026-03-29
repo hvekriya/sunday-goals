@@ -1,54 +1,142 @@
 import { createClient } from '@supabase/supabase-js';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { nanoid } from 'nanoid';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-);
+const supabaseUrl = process.env.SUPABASE_URL?.trim();
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
-export async function saveSession(teams) {
+if (!supabaseUrl || !supabaseKey) {
+  console.error(
+    '[sessions] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Add them to .env in the project root (same folder as package.json).',
+  );
+}
+
+/** Force IPv4 — fixes many Node `TypeError: fetch failed` cases to Supabase on macOS. */
+const supabaseIpv4Agent = new Agent({ connect: { family: 4 } });
+
+function supabaseFetch(input, init) {
+  const opts = init && typeof init === 'object' ? { ...init } : {};
+  opts.dispatcher = supabaseIpv4Agent;
+  return undiciFetch(input, opts);
+}
+
+/** Set `SUPABASE_USE_NODE_FETCH=1` in .env to use Node’s built-in fetch (no Undici agent). Useful if IPv4 forcing breaks your network or to compare errors. */
+const useNodeBuiltinFetch = process.env.SUPABASE_USE_NODE_FETCH === '1';
+
+let supabaseClient = null;
+let lastUnreachableLogAt = 0;
+
+function isSupabaseUnreachable(err) {
+  const msg = err?.message || String(err);
+  return /fetch failed|network|ECONNREFUSED|ENOTFOUND|certificate|ETIMEDOUT/i.test(msg);
+}
+
+function supabaseNetworkHint(err) {
+  if (!isSupabaseUnreachable(err)) return '';
+  return ' Node could not reach Supabase. Confirm SUPABASE_URL in .env, VPN off, project not paused. This server uses IPv4-only HTTP to Supabase (undici).';
+}
+
+function formatErrorChain(err) {
+  if (!err) return '(no error object)';
+  const lines = [];
+  let e = err;
+  for (let i = 0; e && i < 8; i += 1) {
+    const msg = e.message || String(e);
+    const meta = [e.code && `code=${e.code}`, e.errno != null && `errno=${e.errno}`, e.syscall && `syscall=${e.syscall}`]
+      .filter(Boolean)
+      .join(' ');
+    lines.push(i === 0 ? `${msg}${meta ? ` (${meta})` : ''}` : `  caused by: ${msg}${meta ? ` (${meta})` : ''}`);
+    e = e.cause;
+  }
+  return lines.join('\n');
+}
+
+function logUnreachableOnce(label, err) {
+  const now = Date.now();
+  if (now - lastUnreachableLogAt < 15000) return;
+  lastUnreachableLogAt = now;
+  console.error(`[sessions] Supabase unreachable (${label}):\n${formatErrorChain(err)}`);
+  console.error('[sessions] Run: npm run check:supabase   (prints the same from a small test script)');
+  console.error('[sessions] Optional: set SUPABASE_USE_NODE_FETCH=1 in .env and restart to try Node fetch instead of Undici+IPv4.');
+}
+
+export function assertSupabaseConfigured() {
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error(
+      'Supabase is not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env at the project root.',
+    );
+  }
+}
+
+function getClient() {
+  assertSupabaseConfigured();
+  if (!supabaseClient) {
+    const options = useNodeBuiltinFetch
+      ? {}
+      : { global: { fetch: supabaseFetch } };
+    supabaseClient = createClient(supabaseUrl, supabaseKey, options);
+    if (useNodeBuiltinFetch) {
+      console.warn('[sessions] Using Node built-in fetch for Supabase (SUPABASE_USE_NODE_FETCH=1).');
+    }
+  }
+  return supabaseClient;
+}
+
+export async function saveSession(teams, playerPool = []) {
+  assertSupabaseConfigured();
   const today = new Date().toISOString().slice(0, 10);
+  const db = getClient();
 
-  // Check if a session already exists for today
-  const { data: existing } = await supabase
+  const { data: existing, error: existingErr } = await db
     .from('team_sessions')
     .select('slug')
     .eq('date', today)
     .maybeSingle();
+  if (existingErr) {
+    throw new Error(`Failed to read session: ${existingErr.message}${supabaseNetworkHint(existingErr)}`);
+  }
+
+  const payload = { teams, player_pool: Array.isArray(playerPool) ? playerPool : [] };
 
   if (existing) {
-    // Update the existing session for today instead of creating a new one
-    const { error } = await supabase
+    const { error } = await db
       .from('team_sessions')
-      .update({ teams, created_at: new Date().toISOString() })
+      .update({ ...payload, created_at: new Date().toISOString() })
       .eq('slug', existing.slug);
-    if (error) throw new Error(`Failed to update session: ${error.message}`);
+    if (error) throw new Error(`Failed to update session: ${error.message}${supabaseNetworkHint(error)}`);
     return { slug: existing.slug, replaced: true };
   }
 
   const slug = nanoid(10);
-  const { error } = await supabase.from('team_sessions').insert({
+  const { error } = await db.from('team_sessions').insert({
     slug,
     date: today,
     created_at: new Date().toISOString(),
-    teams,
+    ...payload,
   });
-  if (error) throw new Error(`Failed to save session: ${error.message}`);
+  if (error) throw new Error(`Failed to save session: ${error.message}${supabaseNetworkHint(error)}`);
   return { slug, replaced: false };
 }
 
 export async function getSessionForToday() {
+  if (!supabaseUrl || !supabaseKey) return null;
   const today = new Date().toISOString().slice(0, 10);
-  const { data } = await supabase
+  const { data, error } = await getClient()
     .from('team_sessions')
     .select('*')
     .eq('date', today)
     .maybeSingle();
+  if (error && isSupabaseUnreachable(error)) {
+    logUnreachableOnce('today', error);
+    return null;
+  }
+  if (error) console.error('[sessions] getSessionForToday:', error.message);
   return data || null;
 }
 
 export async function getSessionBySlug(slug) {
-  const { data, error } = await supabase
+  if (!supabaseUrl || !supabaseKey) return null;
+  const { data, error } = await getClient()
     .from('team_sessions')
     .select('*')
     .eq('slug', slug)
@@ -58,27 +146,39 @@ export async function getSessionBySlug(slug) {
 }
 
 export async function getRecentSessions(limit = 20) {
+  if (!supabaseUrl || !supabaseKey) return [];
   const today = new Date().toISOString().slice(0, 10);
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from('team_sessions')
     .select('slug, date, created_at, teams')
     .neq('date', today)
     .order('created_at', { ascending: false })
     .limit(limit);
-  if (error) throw new Error(`Failed to load sessions: ${error.message}`);
+  if (error) {
+    if (isSupabaseUnreachable(error)) {
+      logUnreachableOnce('history', error);
+      return [];
+    }
+    throw new Error(`Failed to load sessions: ${error.message}${supabaseNetworkHint(error)}`);
+  }
   return data || [];
 }
 
-export async function updateTeams(slug, teams) {
-  const { error } = await supabase
+export async function updateTeams(slug, teams, playerPool) {
+  assertSupabaseConfigured();
+  const payload = { teams };
+  if (playerPool !== undefined) payload.player_pool = Array.isArray(playerPool) ? playerPool : [];
+  const { error } = await getClient()
     .from('team_sessions')
-    .update({ teams })
+    .update(payload)
     .eq('slug', slug);
-  if (error) throw new Error(`Failed to update teams: ${error.message}`);
+  if (error) throw new Error(`Failed to update teams: ${error.message}${supabaseNetworkHint(error)}`);
 }
 
 export async function updatePaidStatus(slug, teamId, playerId, paid) {
-  const { data: row, error: fetchErr } = await supabase
+  assertSupabaseConfigured();
+  const db = getClient();
+  const { data: row, error: fetchErr } = await db
     .from('team_sessions')
     .select('teams')
     .eq('slug', slug)
@@ -95,9 +195,9 @@ export async function updatePaidStatus(slug, teamId, playerId, paid) {
     };
   });
 
-  const { error: updateErr } = await supabase
+  const { error: updateErr } = await db
     .from('team_sessions')
     .update({ teams })
     .eq('slug', slug);
-  if (updateErr) throw new Error(`Failed to update: ${updateErr.message}`);
+  if (updateErr) throw new Error(`Failed to update: ${updateErr.message}${supabaseNetworkHint(updateErr)}`);
 }

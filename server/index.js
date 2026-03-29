@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './load-env.js';
 import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
@@ -52,15 +52,15 @@ app.get('/api/players', async (req, res) => {
 
 // API: generate teams and create shareable session
 app.post('/api/teams', async (req, res) => {
-  const { players, numTeams: raw } = req.body;
+  const { players, numTeams: raw, playerPool } = req.body;
   const numTeams = Math.max(1, Math.min(20, parseInt(raw, 10) || 2));
   if (!Array.isArray(players)) {
     return res.status(400).json({ error: 'players array required' });
   }
   try {
     const teams = createBalancedTeams(players, numTeams);
-    const { slug, replaced } = await saveSession(teams);
-    res.json({ teams, slug, replaced });
+    const { slug, replaced } = await saveSession(teams, playerPool);
+    res.json({ teams, slug, replaced, playerPool: Array.isArray(playerPool) ? playerPool : [] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Failed to generate teams' });
@@ -89,14 +89,14 @@ app.get('/api/sessions', async (req, res) => {
   }
 });
 
-// API: update full teams array after drag-and-drop reorder
+// API: update full teams array after drag-and-drop reorder or replace
 app.patch('/api/teams/:slug/players', async (req, res) => {
-  const { teams } = req.body;
+  const { teams, playerPool } = req.body;
   if (!Array.isArray(teams)) {
     return res.status(400).json({ error: 'teams array required' });
   }
   try {
-    await updateTeams(req.params.slug, teams);
+    await updateTeams(req.params.slug, teams, playerPool);
     res.json({ ok: true });
   } catch (err) {
     console.error(err);

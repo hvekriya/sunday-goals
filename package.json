@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "node server/index.js",
+    "dev:server": "NODE_OPTIONS=--dns-result-order=ipv4first node server/index.js",
     "dev:client": "cd client && npm run dev",
     "build": "cd client && npm run build",
-    "start": "node server/index.js",
+    "start": "NODE_OPTIONS=--dns-result-order=ipv4first node server/index.js",
+    "check:supabase": "node server/ping-supabase.mjs",
     "postinstall": "cd client && npm install"
   },
   "dependencies": {
@@ -16,7 +17,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "express": "^4.21.0",
-    "nanoid": "^5.0.7"
+    "nanoid": "^5.0.7",
+    "undici": "^6.24.1"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
