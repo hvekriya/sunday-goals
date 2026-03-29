@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import styles from './PlayerProfilePage.module.css';
+import { playerFlairLabel } from '../lib/playerFlair';
+import PlayerAvatar from '../components/PlayerAvatar';
+import CartoonPickerModal from '../components/CartoonPickerModal';
 
 const API = '/api';
 
@@ -10,6 +13,7 @@ export default function PlayerProfilePage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [isAdmin] = useState(() => sessionStorage.getItem('isAdmin') === 'true');
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,16 +57,42 @@ export default function PlayerProfilePage() {
     <div className={styles.page}>
       <Link to="/players" className={styles.back}>← Players</Link>
 
+      {pickerOpen && (
+        <CartoonPickerModal
+          player={player}
+          onClose={() => setPickerOpen(false)}
+          onSaved={() => {
+            const key = encodeURIComponent(slug || '');
+            fetch(`${API}/roster/${key}/history`)
+              .then(async (r) => {
+                const json = await r.json();
+                if (r.ok && json?.player) setData(json);
+              })
+              .catch(() => {});
+          }}
+        />
+      )}
+
       <header className={styles.header}>
-        {player.image ? (
-          <img src={player.image} alt="" className={styles.hero} />
-        ) : (
-          <span className={styles.heroPh} />
-        )}
+        <div className={styles.heroBlock}>
+          <PlayerAvatar
+            playerId={player.id}
+            avatarPick={player.avatar_pick}
+            avatarSeed={player.avatar_seed}
+            alt={player.name}
+            className={styles.hero}
+            variant="hero"
+          />
+          <button type="button" className={styles.cartoonBtn} onClick={() => setPickerOpen(true)}>
+            Change cartoon
+          </button>
+        </div>
         <div>
           <h1 className={styles.title}>{player.name}</h1>
-          {isAdmin && (
+          {isAdmin ? (
             <span className={styles.rank} data-rank={player.ranking}>{player.ranking}</span>
+          ) : (
+            <span className={styles.playerFlair}>{playerFlairLabel(player.id)}</span>
           )}
           {player.notes && <p className={styles.notes}>{player.notes}</p>}
         </div>

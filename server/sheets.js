@@ -1,7 +1,7 @@
 /**
  * Fetch players from a public Google Sheet.
  * Sheet must be shared as "Anyone with the link can view".
- * Expected columns (any case): image/picture/photo, name, ranking
+ * Expected columns (any case): name, ranking (image columns in sheets are ignored)
  * Ranking values: S, A, B, C, Unranked (or blank)
  */
 
@@ -18,7 +18,7 @@ export async function fetchPlayersFromSheet(spreadsheetId, sheetName = 'Sheet1')
   const players = [];
   const isHeaderLabel = (name) => {
     const n = String(name).trim().toLowerCase();
-    return ['name', 'rank', 'ranking', 'tier', 'image', 'picture', 'photo', 'avatar', 'player', 'playername'].includes(n);
+    return ['name', 'rank', 'ranking', 'tier', 'picture', 'photo', 'avatar', 'player', 'playername', 'image', 'img'].includes(n);
   };
 
   // Only treat row 0 as header if it actually looks like one; otherwise include it as data (fixes missing first player)
@@ -33,13 +33,11 @@ export async function fetchPlayersFromSheet(spreadsheetId, sheetName = 'Sheet1')
     if (isHeaderLabel(name)) continue;
 
     const ranking = normalizeRanking(getCell(row, normalized.ranking));
-    const image = normalized.image ? getCell(row, normalized.image) : '';
 
     players.push({
       id: `p-${players.length + 1}`,
       name,
       ranking,
-      image: String(image || '').trim() || null,
     });
   }
 
@@ -59,7 +57,6 @@ function normalizeHeaders(firstRow) {
   return {
     name: find('name', 'player', 'playername') || keys[0],
     ranking: find('ranking', 'rank', 'tier') || keys[1] || keys[0],
-    image: find('image', 'picture', 'photo', 'avatar', 'img'),
   };
 }
 

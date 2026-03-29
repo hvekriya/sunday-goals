@@ -301,6 +301,31 @@
   text-decoration: underline;
 }
 
+.rankBadge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.teamPlayer[data-rank="S"] .rankBadge { background: var(--rank-s); color: #000; }
+.teamPlayer[data-rank="A"] .rankBadge { background: var(--rank-a); color: #000; }
+.teamPlayer[data-rank="B"] .rankBadge { background: var(--rank-b); color: #fff; }
+.teamPlayer[data-rank="C"] .rankBadge { background: var(--rank-c); color: #000; }
+.teamPlayer[data-rank="Unranked"] .rankBadge { background: var(--rank-u); color: #fff; }
+
+.playerFlair {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: rgba(129, 140, 248, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+}
+
 .teamPlayerPaid {
   background: rgba(34, 197, 94, 0.05);
 }

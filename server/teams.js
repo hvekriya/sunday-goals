@@ -42,7 +42,13 @@ export function createBalancedTeams(players, numTeams) {
   return teams.map(({ id, name, players, totalPoints }) => ({
     id,
     name,
-    players: players.map(({ id: pid, name: n, ranking, image }) => ({ id: pid, name: n, ranking, image })),
+    players: players.map(({ id: pid, name: n, ranking, avatar_pick, avatar_seed }) => ({
+      id: pid,
+      name: n,
+      ranking,
+      avatar_pick: avatar_pick != null ? avatar_pick : null,
+      avatar_seed: avatar_seed != null && String(avatar_seed).trim() ? String(avatar_seed).trim() : null,
+    })),
     totalPoints,
   }));
 }

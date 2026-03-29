@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import styles from './PlayersPage.module.css';
 import { adminHeaders } from '../lib/adminHeaders';
 import { profilePathForRosterPlayer } from '../lib/playerProfilePath';
+import { playerFlairLabel } from '../lib/playerFlair';
+import PlayerAvatar from '../components/PlayerAvatar';
+import CartoonPickerModal from '../components/CartoonPickerModal';
 
 const API = '/api';
 const RANKS = ['S', 'A', 'B', 'C', 'Unranked'];
@@ -17,6 +20,7 @@ export default function PlayersPage() {
   const [saving, setSaving] = useState(false);
 
   const [editor, setEditor] = useState(null);
+  const [pickerPlayer, setPickerPlayer] = useState(null);
 
   async function load() {
     setError('');
@@ -24,6 +28,7 @@ export default function PlayersPage() {
       const res = await fetch(`${API}/roster`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load');
+      if (!Array.isArray(data)) throw new Error('Unexpected roster response from server');
       setPlayers(data);
     } catch (e) {
       setError(e.message);
@@ -58,7 +63,7 @@ export default function PlayersPage() {
   }
 
   function openNew() {
-    setEditor({ id: null, name: '', ranking: 'Unranked', image: '', notes: '' });
+    setEditor({ id: null, name: '', ranking: 'Unranked', notes: '' });
   }
 
   function openEdit(p) {
@@ -66,7 +71,6 @@ export default function PlayersPage() {
       id: p.id,
       name: p.name,
       ranking: p.ranking,
-      image: p.image || '',
       notes: p.notes || '',
     });
   }
@@ -79,7 +83,6 @@ export default function PlayersPage() {
       const body = JSON.stringify({
         name: editor.name.trim(),
         ranking: editor.ranking,
-        image: editor.image.trim() || null,
         notes: editor.notes.trim() || null,
       });
       const url = editor.id ? `${API}/roster/${editor.id}` : `${API}/roster`;
@@ -144,9 +147,6 @@ export default function PlayersPage() {
 
       <header className={styles.header}>
         <h1 className={styles.title}>Players</h1>
-        <p className={styles.sub}>
-          Player profiles. Anyone can browse; rank badges are only shown when you use admin login. Only admins can edit.
-        </p>
         <div className={styles.toolbar}>
           {isAdmin ? (
             <>
@@ -171,7 +171,25 @@ export default function PlayersPage() {
             </button>
           )}
         </div>
+        <p className={styles.sub}>
+          Cartoon faces use{' '}
+          <a href="https://www.dicebear.com/" target="_blank" rel="noopener noreferrer">
+            DiceBear
+          </a>
+          {' '}
+          (SVG, curated styles). Anyone can pick a style or set optional <strong>face text</strong> to vary the look — no uploads. Admins edit name/rank with <strong>Edit</strong>.
+        </p>
       </header>
+
+      {pickerPlayer && (
+        <CartoonPickerModal
+          player={pickerPlayer}
+          onClose={() => setPickerPlayer(null)}
+          onSaved={() => {
+            load();
+          }}
+        />
+      )}
 
       {error && <div className={styles.error}>{error}</div>}
 
@@ -200,15 +218,6 @@ export default function PlayersPage() {
               </select>
             </label>
             <label className={styles.label}>
-              Avatar URL
-              <input
-                className={styles.input}
-                value={editor.image}
-                onChange={(e) => setEditor({ ...editor, image: e.target.value })}
-                placeholder="https://…"
-              />
-            </label>
-            <label className={styles.label}>
               Notes (admin / bio)
               <textarea
                 className={styles.textarea}
@@ -230,9 +239,15 @@ export default function PlayersPage() {
       {!players && !error && <p className={styles.muted}>Loading…</p>}
 
       {players && players.length === 0 && (
-        <p className={styles.muted}>
-          No players in the database yet. Admins can add players here. To bulk-import from a Google Sheet once, run <code className={styles.code}>npm run migrate:roster</code> from the project root, then delete <code className={styles.code}>scripts/migrate-players-from-sheet.mjs</code> and the <code className={styles.code}>migrate:roster</code> entry in <code className={styles.code}>package.json</code>.
-        </p>
+        <div className={styles.emptyRoster}>
+          <p className={styles.muted}>
+            No players returned for this app&apos;s Supabase project. The roster is empty in the database this server is using.
+          </p>
+          <p className={styles.muted}>
+            If you already imported rows elsewhere, the usual causes are: the project root <code className={styles.code}>.env</code> points at a different Supabase project than the one you imported into; <code className={styles.code}>SUPABASE_SERVICE_ROLE_KEY</code> is missing or wrong; or the import never ran against <code className={styles.code}>public.players</code>. Check the Supabase Table Editor for <code className={styles.code}>players</code> in the same project as <code className={styles.code}>SUPABASE_URL</code>, and run <code className={styles.code}>npm run check:supabase</code> from the repo root to verify connectivity.
+          </p>
+          <p className={styles.muted}>Admins can add players with <strong>Add player</strong> above after logging in.</p>
+        </div>
       )}
 
       {players && players.length > 0 && (
@@ -240,14 +255,25 @@ export default function PlayersPage() {
           {players.map((p) => (
             <li key={p.id} className={styles.card}>
               <Link to={profilePathForRosterPlayer(p)} className={styles.cardLink}>
-                {p.image ? <img src={p.image} alt="" className={styles.avatar} /> : <span className={styles.avatarPh} />}
+                <PlayerAvatar
+                  playerId={p.id}
+                  avatarPick={p.avatar_pick}
+                  avatarSeed={p.avatar_seed}
+                  alt={p.name}
+                  className={styles.avatar}
+                />
                 <div className={styles.cardBody}>
                   <span className={styles.pname}>{p.name}</span>
-                  {isAdmin && (
+                  {isAdmin ? (
                     <span className={styles.prank} data-rank={p.ranking}>{p.ranking}</span>
+                  ) : (
+                    <span className={styles.playerFlair}>{playerFlairLabel(p.id)}</span>
                   )}
                 </div>
               </Link>
+              <button type="button" className={styles.cartoonPickBtn} onClick={() => setPickerPlayer(p)}>
+                Change cartoon
+              </button>
               {isAdmin && (
                 <div className={styles.cardActions}>
                   <button type="button" className={styles.linkBtn} onClick={() => openEdit(p)}>Edit</button>

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import styles from './Home.module.css';
 import { adminHeaders } from '../lib/adminHeaders';
 import { profilePathForSessionPlayer } from '../lib/playerProfilePath';
+import { playerFlairLabel } from '../lib/playerFlair';
+import PlayerAvatar from '../components/PlayerAvatar';
 
 const API = '/api';
 
@@ -46,8 +48,9 @@ export default function Home() {
       const res = await fetch(`${API}/roster`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load roster');
+      if (!Array.isArray(data)) throw new Error('Unexpected roster response from server');
       setPlayers(data);
-      setSelectedIds(new Set((data || []).map((p) => p.id)));
+      setSelectedIds(new Set(data.map((p) => p.id)));
     } catch (e) {
       setError(e.message);
       setPlayers([]);
@@ -65,6 +68,16 @@ export default function Home() {
     loadHistory();
     loadTodaySession();
     loadRoster();
+  }, []);
+
+  // Session JSON stores avatar_pick at save time; roster is source of truth after cartoon PATCH.
+  useEffect(() => {
+    function onVis() {
+      if (document.visibilityState !== 'visible') return;
+      loadRoster();
+    }
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
 
   async function loadTodaySession() {
@@ -276,7 +289,8 @@ export default function Home() {
       id: rosterPlayer.id,
       name: rosterPlayer.name,
       ranking: rosterPlayer.ranking,
-      image: rosterPlayer.image,
+      avatar_pick: rosterPlayer.avatar_pick ?? null,
+      avatar_seed: rosterPlayer.avatar_seed ?? null,
       points: RANK_POINTS[rosterPlayer.ranking] ?? 0,
       paid: false,
     };
@@ -296,13 +310,21 @@ export default function Home() {
     if (idx === -1) return;
 
     const newPlayer = {
-      ...inPlayer,
+      id: inPlayer.id,
+      name: inPlayer.name,
+      ranking: inPlayer.ranking,
+      avatar_pick: inPlayer.avatar_pick ?? null,
+      avatar_seed: inPlayer.avatar_seed ?? null,
       points: RANK_POINTS[inPlayer.ranking] ?? 0,
       paid: outPlayer.paid ?? false,
     };
-    const backToPool = { ...outPlayer };
-    delete backToPool.paid;
-    delete backToPool.points;
+    const backToPool = {
+      id: outPlayer.id,
+      name: outPlayer.name,
+      ranking: outPlayer.ranking,
+      avatar_pick: outPlayer.avatar_pick ?? null,
+      avatar_seed: outPlayer.avatar_seed ?? null,
+    };
 
     team.players[idx] = newPlayer;
     const nextPool = [...playerPool.filter((p) => p.id !== inPlayer.id), backToPool];
@@ -375,6 +397,24 @@ export default function Home() {
 
   const playersAvailableToAdd = addToTeamId ? rosterPlayersNotOnAnyTeam() : [];
 
+  function avatarPickForTeamPlayer(p) {
+    const fromRoster = players?.find((x) => x.id === p.id);
+    if (fromRoster) return fromRoster.avatar_pick ?? null;
+    return p?.avatar_pick ?? null;
+  }
+
+  function avatarSeedForTeamPlayer(p) {
+    const fromRoster = players?.find((x) => x.id === p.id);
+    if (fromRoster) {
+      if (fromRoster.avatar_seed != null && String(fromRoster.avatar_seed).trim()) {
+        return String(fromRoster.avatar_seed).trim();
+      }
+      return undefined;
+    }
+    const fromP = p?.avatar_seed != null && String(p.avatar_seed).trim() ? String(p.avatar_seed).trim() : '';
+    return fromP || undefined;
+  }
+
   return (
     <div className={styles.page}>
 
@@ -393,11 +433,13 @@ export default function Home() {
                     data-rank={poolPlayer.ranking}
                     onClick={() => handleReplaceWith(replaceTarget.teamId, replaceTarget.player, poolPlayer)}
                   >
-                    {poolPlayer.image ? (
-                      <img src={poolPlayer.image} alt="" className={styles.avatar} />
-                    ) : (
-                      <span className={styles.avatarPlaceholder} />
-                    )}
+                    <PlayerAvatar
+                      playerId={poolPlayer.id}
+                      avatarPick={avatarPickForTeamPlayer(poolPlayer)}
+                      avatarSeed={avatarSeedForTeamPlayer(poolPlayer)}
+                      alt={poolPlayer.name}
+                      className={styles.avatar}
+                    />
                     <span>{poolPlayer.name}</span>
                     <em>{poolPlayer.ranking}</em>
                   </button>
@@ -434,11 +476,13 @@ export default function Home() {
                       data-rank={rp.ranking}
                       onClick={() => handleAddPlayerToTeam(addToTeamId, rp)}
                     >
-                      {rp.image ? (
-                        <img src={rp.image} alt="" className={styles.avatar} />
-                      ) : (
-                        <span className={styles.avatarPlaceholder} />
-                      )}
+                      <PlayerAvatar
+                        playerId={rp.id}
+                        avatarPick={rp.avatar_pick}
+                        avatarSeed={rp.avatar_seed}
+                        alt={rp.name}
+                        className={styles.avatar}
+                      />
                       <span>{rp.name}</span>
                       <em>{rp.ranking}</em>
                     </button>
@@ -483,7 +527,6 @@ export default function Home() {
 
       <header className={styles.header}>
         <h1 className={styles.title}>SKSST Woolwich - Sunday Goals Team Balancer</h1>
-        <p className={styles.subtitle}>Roster in the database → balanced teams → share a link. Guests can browse sessions, profiles, and pay via Monzo.</p>
         <div className={styles.adminBar}>
           {isAdmin ? (
             <button type="button" className={styles.adminBtn} onClick={handleLockout}>
@@ -659,9 +702,19 @@ export default function Home() {
                         onDrop={isAdmin ? (e) => { e.preventDefault(); e.stopPropagation(); handleDropOnPlayer(p.id, team.id); } : undefined}
                       >
                         {isAdmin && <span className={styles.dragHandle} aria-hidden>⠿</span>}
-                        {p.image ? <img src={p.image} alt="" className={styles.avatar} /> : <span className={styles.avatarPlaceholder} />}
+                        <PlayerAvatar
+                          playerId={p.id}
+                          avatarPick={avatarPickForTeamPlayer(p)}
+                          avatarSeed={avatarSeedForTeamPlayer(p)}
+                          alt={p.name}
+                          className={styles.avatar}
+                        />
                         <Link to={profilePathForSessionPlayer(p, players)} className={styles.playerNameCell}>{p.name}</Link>
-                        {isAdmin && <span className={styles.rank}>{p.ranking}</span>}
+                        {isAdmin ? (
+                          <span className={styles.rank}>{p.ranking}</span>
+                        ) : (
+                          <span className={styles.playerFlair}>{playerFlairLabel(p.id)}</span>
+                        )}
                         {isAdmin ? (
                           <span className={styles.playerActions}>
                             {playerPool.length > 0 && (

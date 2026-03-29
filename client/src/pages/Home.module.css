@@ -587,6 +587,18 @@
 .teamPlayer[data-rank="C"] .rank { background: var(--rank-c); color: #000; }
 .teamPlayer[data-rank="Unranked"] .rank { background: var(--rank-u); color: #fff; }
 
+.playerFlair {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(129, 140, 248, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  flex-shrink: 0;
+}
+
 .playerNameCell {
   flex: 1;
   color: var(--text);

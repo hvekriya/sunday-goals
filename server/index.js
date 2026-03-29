@@ -20,6 +20,7 @@ import {
   createRosterPlayer,
   updateRosterPlayer,
   deleteRosterPlayer,
+  updateRosterPlayerCartoon,
 } from './playersRepo.js';
 import { requireAdmin } from './adminAuth.js';
 
@@ -88,10 +89,27 @@ app.get('/api/roster/:key', async (req, res) => {
   }
 });
 
+/** Curated cartoon (preset index) and/or DiceBear seed; no auth — same as public roster semantics. */
+app.patch('/api/roster/:id/cartoon', async (req, res) => {
+  try {
+    if (!('pick' in req.body) && !('seed' in req.body)) {
+      return res.status(400).json({
+        error: 'JSON body must include pick (number or null) and/or seed (string or null)',
+      });
+    }
+    const player = await updateRosterPlayerCartoon(req.params.id, req.body);
+    res.json(player);
+  } catch (err) {
+    console.error(err);
+    const status = /not found/i.test(err.message) ? 404 : 400;
+    res.status(status).json({ error: err.message || 'Failed to update cartoon' });
+  }
+});
+
 app.post('/api/roster', requireAdmin, async (req, res) => {
   try {
-    const { name, ranking, image, notes } = req.body;
-    const player = await createRosterPlayer({ name, ranking, image, notes });
+    const { name, ranking, notes } = req.body;
+    const player = await createRosterPlayer({ name, ranking, notes });
     res.status(201).json(player);
   } catch (err) {
     console.error(err);
