@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { cartoonUrlForPlayer } from '../lib/cartoonAvatarUrl';
+import { cartoonUrlForPlayer } from '../../../shared/cartoonPresets.js';
 
 const BLANK_IMG =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';

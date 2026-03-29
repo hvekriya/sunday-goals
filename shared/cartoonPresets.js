@@ -33,7 +33,7 @@ export const CARTOON_AVATAR_PRESETS = buildPresets();
 
 export const CARTOON_AVATAR_PRESET_COUNT = CARTOON_AVATAR_PRESETS.length;
 
-export function lockFromPlayerId(id) {
+function lockFromPlayerId(id) {
   const s = String(id ?? '');
   let h = 0;
   for (let i = 0; i < s.length; i += 1) {
@@ -52,7 +52,7 @@ export function isValidAvatarPick(pick) {
 }
 
 /** Coerce JSON/API values (e.g. string "3") to an integer pick, or null/undefined for auto. */
-export function normalizeAvatarPick(pick) {
+function normalizeAvatarPick(pick) {
   if (pick === null || pick === undefined) return pick;
   const n = typeof pick === 'number' ? pick : Number(pick);
   if (!Number.isFinite(n)) return undefined;
@@ -61,15 +61,14 @@ export function normalizeAvatarPick(pick) {
   return i;
 }
 
-export function resolveCartoonPreset(playerId, avatarPick) {
+function resolveCartoonPreset(playerId, avatarPick) {
   const coerced = normalizeAvatarPick(avatarPick);
   const pick =
     coerced != null && isValidAvatarPick(coerced) ? coerced : defaultAvatarPickForPlayerId(playerId);
   return CARTOON_AVATAR_PRESETS[pick];
 }
 
-/** Effective DiceBear seed: custom text overrides the preset seed for the same style. */
-export function effectiveCartoonSeed(playerId, avatarPick, avatarSeed) {
+function effectiveCartoonSeed(playerId, avatarPick, avatarSeed) {
   const preset = resolveCartoonPreset(playerId, avatarPick);
   const custom = avatarSeed != null ? String(avatarSeed).trim() : '';
   return custom || preset.seed;
@@ -84,11 +83,6 @@ export function diceBearCartoonSvgUrl(style, seed, size = 128) {
   params.set('seed', seed);
   if (size) params.set('size', String(size));
   return `https://api.dicebear.com/${DICEBEAR_VERSION}/${style}/svg?${params.toString()}`;
-}
-
-/** @deprecated Alias for SVG — PNG rate limits break thumbnail grids. */
-export function diceBearCartoonPngUrl(style, seed, size = 128) {
-  return diceBearCartoonSvgUrl(style, seed, size);
 }
 
 const SEED_MAX = 64;
@@ -109,12 +103,6 @@ export function normalizeAvatarSeedForSave(raw) {
     throw new Error('Seed may only contain letters, numbers, spaces, and common punctuation');
   }
   return s;
-}
-
-export function cartoonUrlForPick(pick, size = 128) {
-  const preset = CARTOON_AVATAR_PRESETS[pick];
-  if (!preset) return null;
-  return diceBearCartoonSvgUrl(preset.style, preset.seed, size);
 }
 
 /**
