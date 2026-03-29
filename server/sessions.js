@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { getClient, assertSupabaseConfigured, hasSupabaseConfig } from './supabaseClient.js';
-import { getRosterPlayer } from './playersRepo.js';
+import { getRosterPlayerBySlugOrId } from './playersRepo.js';
 
 let lastUnreachableLogAt = 0;
 
@@ -188,7 +188,7 @@ function normalizeHistoryName(n) {
  */
 export async function getAppearancesForPlayer(playerId) {
   if (!hasSupabaseConfig()) return [];
-  const roster = await getRosterPlayer(playerId);
+  const roster = await getRosterPlayerBySlugOrId(playerId);
   const nameKey = roster?.name ? normalizeHistoryName(roster.name) : '';
 
   const { data: rows, error } = await getClient()

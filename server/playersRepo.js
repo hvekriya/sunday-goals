@@ -156,12 +156,6 @@ export async function getRosterPlayerBySlugOrId(raw) {
   return data ? rowToPlayer(data) : null;
 }
 
-/** @deprecated use getRosterPlayerBySlugOrId — kept for sessions history (always uuid). */
-export async function getRosterPlayer(id) {
-  if (!isUuid(String(id))) return null;
-  return getRosterPlayerBySlugOrId(id);
-}
-
 export async function createRosterPlayer({ name, ranking, notes }) {
   assertSupabaseConfigured();
   const trimmed = (name || '').trim();

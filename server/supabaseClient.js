@@ -35,10 +35,6 @@ export function assertSupabaseConfigured() {
   }
 }
 
-export function getSupabaseUrl() {
-  return supabaseUrl || '';
-}
-
 export function hasSupabaseConfig() {
   return Boolean(supabaseUrl && supabaseKey);
 }
