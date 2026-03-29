@@ -21,6 +21,7 @@
     "dotenv": "^17.3.1",
     "express": "^4.21.0",
     "nanoid": "^5.0.7",
+    "serverless-http": "^4.0.0",
     "undici": "^6.24.1"
   },
   "devDependencies": {
