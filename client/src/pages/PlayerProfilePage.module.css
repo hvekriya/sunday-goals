@@ -1,0 +1,168 @@
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.back {
+  display: inline-block;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-bottom: 1.25rem;
+  text-decoration: none;
+}
+
+.back:hover {
+  color: var(--accent);
+}
+
+.header {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+.hero {
+  width: 100px;
+  height: 100px;
+  border-radius: 16px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+.heroPh {
+  width: 100px;
+  height: 100px;
+  border-radius: 16px;
+  background: var(--surface-hover);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 1.75rem;
+  margin: 0 0 0.5rem;
+  color: var(--text);
+}
+
+.rank {
+  display: inline-block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+}
+
+.rank[data-rank="S"] { background: var(--rank-s); color: #000; }
+.rank[data-rank="A"] { background: var(--rank-a); color: #000; }
+.rank[data-rank="B"] { background: var(--rank-b); color: #fff; }
+.rank[data-rank="C"] { background: var(--rank-c); color: #000; }
+.rank[data-rank="Unranked"] { background: var(--rank-u); color: #fff; }
+
+.notes {
+  margin: 1rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.section {
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}
+
+.h2 {
+  font-size: 1.125rem;
+  margin: 0 0 0.35rem;
+}
+
+.hint {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 0 0 1rem;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.error {
+  color: #fca5a5;
+  margin-bottom: 1rem;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.date {
+  font-weight: 600;
+  display: block;
+  color: var(--text);
+}
+
+.team {
+  font-size: 0.8125rem;
+  color: var(--accent);
+  display: block;
+}
+
+.legacyTag {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.12rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(251, 191, 36, 0.15);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.rowMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.paid {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #4ade80;
+}
+
+.unpaid {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.slink {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.slink:hover {
+  text-decoration: underline;
+}

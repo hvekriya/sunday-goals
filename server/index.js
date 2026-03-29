@@ -4,25 +4,44 @@ import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { createBalancedTeams } from './teams.js';
-import { fetchPlayersFromSheet } from './sheets.js';
-import { getSessionBySlug, saveSession, getRecentSessions, updatePaidStatus, updateTeams, getSessionForToday } from './sessions.js';
+import {
+  getSessionBySlug,
+  saveSession,
+  getRecentSessions,
+  updatePaidStatus,
+  updateTeams,
+  getSessionForToday,
+  listAllSessions,
+  getAppearancesForPlayer,
+} from './sessions.js';
+import {
+  listRosterPlayers,
+  getRosterPlayerBySlugOrId,
+  createRosterPlayer,
+  updateRosterPlayer,
+  deleteRosterPlayer,
+} from './playersRepo.js';
+import { requireAdmin } from './adminAuth.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
+
 const distPath = join(__dirname, '../client/dist');
+let distExists = false;
 try {
   const { accessSync } = await import('fs');
   accessSync(distPath);
-  app.use(express.static(distPath));
+  accessSync(join(distPath, 'index.html'));
+  distExists = true;
 } catch {
   // dev mode: no dist yet
 }
 
-// API: verify admin password
+// Register all /api routes BEFORE static + SPA fallback so HTML is never served for API paths.
 app.post('/api/admin/verify', (req, res) => {
   const { password } = req.body;
   if (!process.env.ADMIN_PASSWORD) {
@@ -35,23 +54,73 @@ app.post('/api/admin/verify', (req, res) => {
   }
 });
 
-// API: fetch players from Google Sheet (proxy to avoid CORS)
-app.get('/api/players', async (req, res) => {
-  const { spreadsheetId, sheetName = 'Sheet1' } = req.query;
-  if (!spreadsheetId) {
-    return res.status(400).json({ error: 'spreadsheetId is required' });
-  }
+/** Roster from database (public read). */
+app.get('/api/roster', async (req, res) => {
   try {
-    const players = await fetchPlayersFromSheet(spreadsheetId, sheetName);
+    const players = await listRosterPlayers();
     res.json(players);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message || 'Failed to fetch sheet' });
+    res.status(500).json({ error: err.message || 'Failed to load roster' });
   }
 });
 
-// API: generate teams and create shareable session
-app.post('/api/teams', async (req, res) => {
+app.get('/api/roster/:key/history', async (req, res) => {
+  try {
+    const player = await getRosterPlayerBySlugOrId(req.params.key);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    const appearances = await getAppearancesForPlayer(player.id);
+    res.json({ player, appearances });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to load history' });
+  }
+});
+
+app.get('/api/roster/:key', async (req, res) => {
+  try {
+    const player = await getRosterPlayerBySlugOrId(req.params.key);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    res.json(player);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to load player' });
+  }
+});
+
+app.post('/api/roster', requireAdmin, async (req, res) => {
+  try {
+    const { name, ranking, image, notes } = req.body;
+    const player = await createRosterPlayer({ name, ranking, image, notes });
+    res.status(201).json(player);
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err.message || 'Failed to create player' });
+  }
+});
+
+app.patch('/api/roster/:id', requireAdmin, async (req, res) => {
+  try {
+    const player = await updateRosterPlayer(req.params.id, req.body);
+    res.json(player);
+  } catch (err) {
+    console.error(err);
+    const status = /not found/i.test(err.message) ? 404 : 400;
+    res.status(status).json({ error: err.message || 'Failed to update player' });
+  }
+});
+
+app.delete('/api/roster/:id', requireAdmin, async (req, res) => {
+  try {
+    await deleteRosterPlayer(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err.message || 'Failed to delete player' });
+  }
+});
+
+app.post('/api/teams', requireAdmin, async (req, res) => {
   const { players, numTeams: raw, playerPool } = req.body;
   const numTeams = Math.max(1, Math.min(20, parseInt(raw, 10) || 2));
   if (!Array.isArray(players)) {
@@ -67,7 +136,6 @@ app.post('/api/teams', async (req, res) => {
   }
 });
 
-// API: today's session (if any)
 app.get('/api/sessions/today', async (req, res) => {
   try {
     const session = await getSessionForToday();
@@ -78,7 +146,18 @@ app.get('/api/sessions/today', async (req, res) => {
   }
 });
 
-// API: recent sessions (history)
+/** All sessions including today (newest first) — must be before /api/sessions so "browse" is not captured as a filter. */
+app.get('/api/sessions/browse', async (req, res) => {
+  try {
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const sessions = await listAllSessions(limit);
+    res.json(sessions);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to load sessions' });
+  }
+});
+
 app.get('/api/sessions', async (req, res) => {
   try {
     const sessions = await getRecentSessions(20);
@@ -89,8 +168,7 @@ app.get('/api/sessions', async (req, res) => {
   }
 });
 
-// API: update full teams array after drag-and-drop reorder or replace
-app.patch('/api/teams/:slug/players', async (req, res) => {
+app.patch('/api/teams/:slug/players', requireAdmin, async (req, res) => {
   const { teams, playerPool } = req.body;
   if (!Array.isArray(teams)) {
     return res.status(400).json({ error: 'teams array required' });
@@ -104,8 +182,7 @@ app.patch('/api/teams/:slug/players', async (req, res) => {
   }
 });
 
-// API: update paid status for a player in a session
-app.patch('/api/teams/:slug/paid', async (req, res) => {
+app.patch('/api/teams/:slug/paid', requireAdmin, async (req, res) => {
   const { teamId, playerId, paid } = req.body;
   if (!teamId || !playerId || typeof paid !== 'boolean') {
     return res.status(400).json({ error: 'teamId, playerId and paid (boolean) required' });
@@ -119,7 +196,6 @@ app.patch('/api/teams/:slug/paid', async (req, res) => {
   }
 });
 
-// API: get session by slug (for shared URL)
 app.get('/api/teams/:slug', async (req, res) => {
   try {
     const session = await getSessionBySlug(req.params.slug);
@@ -131,14 +207,21 @@ app.get('/api/teams/:slug', async (req, res) => {
   }
 });
 
-// SPA fallback (only if we're serving static)
-try {
-  const { accessSync } = await import('fs');
-  accessSync(join(distPath, 'index.html'));
-  app.get('*', (_, res) => {
-    res.sendFile(join(__dirname, '../client/dist/index.html'));
+if (distExists) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(join(distPath, 'index.html'));
   });
-} catch {}
+}
+
+app.use((req, res) => {
+  if (req.path.startsWith('/api')) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  res.status(404).type('text').send('Not found');
+});
 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);

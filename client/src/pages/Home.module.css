@@ -184,10 +184,51 @@
   padding: 1rem 0;
 }
 
+.cardSubtitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+  color: var(--text);
+}
+
 .hint {
   font-size: 0.875rem;
   color: var(--text-muted);
   margin: 0 0 1rem;
+}
+
+.hint a {
+  color: var(--accent);
+}
+
+.inlineLink {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.warn {
+  font-size: 0.875rem;
+  color: #fcd34d;
+  margin: 0 0 1rem;
+}
+
+.importBox {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.okMsg {
+  font-size: 0.875rem;
+  color: #4ade80;
+  margin: 0.75rem 0 0;
 }
 
 .row {
@@ -429,11 +470,40 @@
   box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.25);
 }
 
+.teamCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.teamCardHeader .teamName {
+  margin: 0;
+}
+
 .teamName {
   font-size: 1rem;
   font-weight: 600;
   margin: 0 0 0.25rem;
   color: var(--accent);
+}
+
+.addTeamBtn {
+  flex-shrink: 0;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.12);
+  color: rgb(34, 197, 94);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.addTeamBtn:hover {
+  background: rgba(34, 197, 94, 0.2);
 }
 
 .teamPoints {
@@ -519,6 +589,14 @@
 
 .playerNameCell {
   flex: 1;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.playerNameCell:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 .playerActions {

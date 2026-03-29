@@ -1,19 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import styles from './Home.module.css';
+import { adminHeaders } from '../lib/adminHeaders';
+import { profilePathForSessionPlayer } from '../lib/playerProfilePath';
 
 const API = '/api';
 
-// Default: Sunday Goals Players spreadsheet
-const DEFAULT_SPREADSHEET_ID = '1SnJ9yGvpjgtSF5GbsauyU_OE2v2zClkDeIcoIeDAqck';
-const DEFAULT_SHEET_NAME = 'Sheet1';
-
 export default function Home() {
-  const [spreadsheetId, setSpreadsheetId] = useState(DEFAULT_SPREADSHEET_ID);
-  const [sheetName, setSheetName] = useState(DEFAULT_SHEET_NAME);
   const [numTeams, setNumTeams] = useState(2);
   const [players, setPlayers] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [loading, setLoading] = useState(false);
+  const [rosterLoading, setRosterLoading] = useState(true);
   const [todayLoading, setTodayLoading] = useState(true);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
@@ -31,6 +29,8 @@ export default function Home() {
 
   // Replace modal: { teamId, player }
   const [replaceTarget, setReplaceTarget] = useState(null);
+  // Add player modal: teamId (append roster player not on any team)
+  const [addToTeamId, setAddToTeamId] = useState(null);
 
   // Admin auth
   const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('isAdmin') === 'true');
@@ -39,33 +39,32 @@ export default function Home() {
   const [adminError, setAdminError] = useState('');
   const [adminLoading, setAdminLoading] = useState(false);
 
-  function extractIdFromUrl(url) {
-    const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-    return m ? m[1] : url.trim();
-  }
-
-  async function loadPlayers(id, sheet) {
-    const effectiveId = extractIdFromUrl(id || spreadsheetId);
-    if (!effectiveId) return;
-    setLoading(true);
+  async function loadRoster() {
+    setRosterLoading(true);
     setError('');
-    setPlayers(null);
     try {
-      const res = await fetch(`${API}/players?spreadsheetId=${encodeURIComponent(effectiveId)}&sheetName=${encodeURIComponent(sheet || sheetName)}`);
+      const res = await fetch(`${API}/roster`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to load');
+      if (!res.ok) throw new Error(data.error || 'Failed to load roster');
       setPlayers(data);
       setSelectedIds(new Set((data || []).map((p) => p.id)));
     } catch (e) {
       setError(e.message);
+      setPlayers([]);
+      setSelectedIds(new Set());
     } finally {
-      setLoading(false);
+      setRosterLoading(false);
     }
   }
 
   useEffect(() => {
+    if (sessionStorage.getItem('isAdmin') === 'true' && !sessionStorage.getItem('adminPassword')) {
+      sessionStorage.removeItem('isAdmin');
+      setIsAdmin(false);
+    }
     loadHistory();
     loadTodaySession();
+    loadRoster();
   }, []);
 
   async function loadTodaySession() {
@@ -98,14 +97,6 @@ export default function Home() {
     }
   }
 
-  async function handleLoad() {
-    if (!extractIdFromUrl(spreadsheetId)) {
-      setError('Enter a spreadsheet ID or full Google Sheet URL.');
-      return;
-    }
-    await loadPlayers(spreadsheetId, sheetName);
-  }
-
   function togglePlayer(id) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -125,7 +116,7 @@ export default function Home() {
 
   async function handleGenerate() {
     if (!players || players.length === 0) {
-      setError('Load players from the sheet first.');
+      setError('Add players in the database first (Players page).');
       return;
     }
     const selectedPlayers = players.filter((p) => selectedIds.has(p.id));
@@ -140,7 +131,7 @@ export default function Home() {
     try {
       const res = await fetch(`${API}/teams`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...adminHeaders() },
         body: JSON.stringify({
           players: selectedPlayers,
           numTeams: n,
@@ -179,7 +170,7 @@ export default function Home() {
     try {
       await fetch(`${API}/teams/${slug}/paid`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...adminHeaders() },
         body: JSON.stringify({ teamId, playerId, paid }),
       });
     } catch {
@@ -220,7 +211,7 @@ export default function Home() {
     try {
       const res = await fetch(`${API}/teams/${slug}/players`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...adminHeaders() },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
@@ -265,6 +256,37 @@ export default function Home() {
     drag.current = null;
     setDragOverTeam(null);
     setDragOverPlayer(null);
+  }
+
+  function rosterPlayersNotOnAnyTeam() {
+    if (!players?.length || !teams?.length) return [];
+    const onTeam = new Set();
+    for (const t of teams) {
+      for (const p of t.players) onTeam.add(p.id);
+    }
+    return players.filter((p) => !onTeam.has(p.id));
+  }
+
+  function handleAddPlayerToTeam(teamId, rosterPlayer) {
+    const nextTeams = teamsRef.current.map((t) => ({ ...t, players: [...t.players] }));
+    const team = nextTeams.find((t) => t.id === teamId);
+    if (!team) return;
+
+    const newPlayer = {
+      id: rosterPlayer.id,
+      name: rosterPlayer.name,
+      ranking: rosterPlayer.ranking,
+      image: rosterPlayer.image,
+      points: RANK_POINTS[rosterPlayer.ranking] ?? 0,
+      paid: false,
+    };
+    team.players.push(newPlayer);
+    const nextPool = playerPool.filter((p) => p.id !== rosterPlayer.id);
+
+    applyTeams(nextTeams);
+    setPlayerPool(nextPool);
+    persistTeams(result?.slug, nextTeams, nextPool);
+    setAddToTeamId(null);
   }
 
   function handleReplaceWith(teamId, outPlayer, inPlayer) {
@@ -324,6 +346,7 @@ export default function Home() {
       });
       if (res.ok) {
         sessionStorage.setItem('isAdmin', 'true');
+        sessionStorage.setItem('adminPassword', adminPassword);
         setIsAdmin(true);
         setShowUnlock(false);
         setAdminPassword('');
@@ -339,6 +362,7 @@ export default function Home() {
 
   function handleLockout() {
     sessionStorage.removeItem('isAdmin');
+    sessionStorage.removeItem('adminPassword');
     setIsAdmin(false);
   }
 
@@ -347,7 +371,9 @@ export default function Home() {
     : '';
 
   // Only show the generate form if admin, no active session today (or explicitly regenerating)
-  const showGenerateForm = isAdmin && !todayLoading && (!todaySession || showGenerate);
+  const showGenerateForm = isAdmin && !todayLoading && !rosterLoading && (!todaySession || showGenerate);
+
+  const playersAvailableToAdd = addToTeamId ? rosterPlayersNotOnAnyTeam() : [];
 
   return (
     <div className={styles.page}>
@@ -387,6 +413,48 @@ export default function Home() {
         </div>
       )}
 
+      {addToTeamId && (
+        <div className={styles.modalOverlay} onClick={() => setAddToTeamId(null)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 className={styles.modalTitle}>
+              Add player to {teams?.find((t) => t.id === addToTeamId)?.name ?? 'team'}
+            </h2>
+            <p className={styles.hint}>
+              Choose someone from the roster who is not on a team yet (including the pool). They are appended to this team.
+            </p>
+            <ul className={styles.poolList}>
+              {playersAvailableToAdd.length === 0 ? (
+                <li className={styles.hint}>Everyone on the roster is already on a team.</li>
+              ) : (
+                playersAvailableToAdd.map((rp) => (
+                  <li key={rp.id} className={styles.poolItem}>
+                    <button
+                      type="button"
+                      className={styles.poolBtn}
+                      data-rank={rp.ranking}
+                      onClick={() => handleAddPlayerToTeam(addToTeamId, rp)}
+                    >
+                      {rp.image ? (
+                        <img src={rp.image} alt="" className={styles.avatar} />
+                      ) : (
+                        <span className={styles.avatarPlaceholder} />
+                      )}
+                      <span>{rp.name}</span>
+                      <em>{rp.ranking}</em>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+            <div className={styles.modalActions}>
+              <button type="button" className={styles.btn} onClick={() => setAddToTeamId(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Admin unlock modal */}
       {showUnlock && (
         <div className={styles.modalOverlay} onClick={() => setShowUnlock(false)}>
@@ -415,7 +483,7 @@ export default function Home() {
 
       <header className={styles.header}>
         <h1 className={styles.title}>SKSST Woolwich - Sunday Goals Team Balancer</h1>
-        <p className={styles.subtitle}>Load players from Google Sheets → balance into equal teams → share a link</p>
+        <p className={styles.subtitle}>Roster in the database → balanced teams → share a link. Guests can browse sessions, profiles, and pay via Monzo.</p>
         <div className={styles.adminBar}>
           {isAdmin ? (
             <button type="button" className={styles.adminBtn} onClick={handleLockout}>
@@ -431,34 +499,23 @@ export default function Home() {
 
       <main className={styles.main}>
 
-        {todayLoading && (
-          <div className={styles.todayLoading}>Checking for today&apos;s session…</div>
+        {(todayLoading || rosterLoading) && (
+          <div className={styles.todayLoading}>Loading…</div>
         )}
 
         {showGenerateForm && (
           <>
             <section className={styles.card}>
-              <h2 className={styles.cardTitle}>1. Google Sheet</h2>
-              <p className={styles.hint}>Share the sheet as &quot;Anyone with the link can view&quot;. Use columns: <strong>Name</strong>, <strong>Rank</strong> (S highest, then A, B, C, Unranked), <strong>Image</strong> (optional URL).</p>
-              <div className={styles.row}>
-                <input
-                  type="text"
-                  placeholder="Spreadsheet ID or full Google Sheet URL"
-                  value={spreadsheetId}
-                  onChange={(e) => setSpreadsheetId(e.target.value)}
-                  className={styles.input}
-                />
-                <input
-                  type="text"
-                  placeholder="Sheet name"
-                  value={sheetName}
-                  onChange={(e) => setSheetName(e.target.value)}
-                  className={styles.inputShort}
-                />
-                <button onClick={handleLoad} disabled={loading} className={styles.btn}>
-                  {loading && !players ? 'Loading…' : 'Load players'}
+              <h2 className={styles.cardTitle}>1. Roster</h2>
+              <p className={styles.hint}>
+                Players live in the database (<Link to="/players">Players</Link>).{' '}
+                <button type="button" className={styles.inlineLink} onClick={() => loadRoster()} disabled={rosterLoading}>
+                  Refresh roster
                 </button>
-              </div>
+              </p>
+              {players && players.length === 0 && (
+                <p className={styles.warn}>No players yet. Add them on the Players page.</p>
+              )}
               {showGenerate && todaySession && (
                 <button
                   type="button"
@@ -470,7 +527,7 @@ export default function Home() {
               )}
             </section>
 
-            {players && (
+            {players && players.length > 0 && (
               <section className={styles.card}>
                 <h2 className={styles.cardTitle}>2. Select who&apos;s playing ({selectedIds.size} of {players.length} selected)</h2>
                 <p className={styles.hint}>Click a player to include or exclude them. Only selected players are used when generating teams.</p>
@@ -527,7 +584,7 @@ export default function Home() {
                 <button
                   type="button"
                   className={styles.regenBtn}
-                  onClick={() => { setShowGenerate(true); loadPlayers(DEFAULT_SPREADSHEET_ID, DEFAULT_SHEET_NAME); }}
+                  onClick={() => { setShowGenerate(true); loadRoster(); }}
                 >
                   Regenerate
                 </button>
@@ -537,6 +594,7 @@ export default function Home() {
               <p className={styles.hint}>
                 Drag a player onto another player to swap them, or drag to an empty area of a team to move them.
                 {playerPool.length > 0 && ' Use Replace to swap a player with someone from the pool.'}
+                {' Use Add player on a team to bring in someone who is not on any team yet (from the roster or pool).'}
               </p>
             )}
             <div className={styles.shareBox}>
@@ -566,7 +624,18 @@ export default function Home() {
                   onDragLeave={isAdmin ? (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverTeam(null); } : undefined}
                   onDrop={isAdmin ? (e) => { e.preventDefault(); handleDropOnTeam(team.id); } : undefined}
                 >
-                  <h3 className={styles.teamName}>{team.name}</h3>
+                  <div className={styles.teamCardHeader}>
+                    <h3 className={styles.teamName}>{team.name}</h3>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        className={styles.addTeamBtn}
+                        onClick={() => setAddToTeamId(team.id)}
+                      >
+                        Add player
+                      </button>
+                    )}
+                  </div>
                   <p className={styles.teamPoints}>
                     {team.players.reduce((s, p) => s + (p.points ?? 0), 0)} pts
                   </p>
@@ -589,7 +658,7 @@ export default function Home() {
                       >
                         {isAdmin && <span className={styles.dragHandle} aria-hidden>⠿</span>}
                         {p.image ? <img src={p.image} alt="" className={styles.avatar} /> : <span className={styles.avatarPlaceholder} />}
-                        <span className={styles.playerNameCell}>{p.name}</span>
+                        <Link to={profilePathForSessionPlayer(p, players)} className={styles.playerNameCell}>{p.name}</Link>
                         <span className={styles.rank}>{p.ranking}</span>
                         {isAdmin ? (
                           <span className={styles.playerActions}>

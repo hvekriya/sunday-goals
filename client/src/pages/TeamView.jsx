@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import styles from './TeamView.module.css';
+import { adminHeaders } from '../lib/adminHeaders';
+import { profilePathForSessionPlayer } from '../lib/playerProfilePath';
 
 const API = '/api';
 
@@ -13,12 +15,28 @@ export default function TeamView() {
   const [error, setError] = useState('');
 
   const [replaceTarget, setReplaceTarget] = useState(null);
+  const [addToTeamId, setAddToTeamId] = useState(null);
 
   const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('isAdmin') === 'true');
   const [showUnlock, setShowUnlock] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
   const [adminLoading, setAdminLoading] = useState(false);
+  const [roster, setRoster] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API}/roster`);
+        const data = await res.json();
+        if (!cancelled && res.ok && Array.isArray(data)) setRoster(data);
+      } catch {
+        // optional for profile links
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,6 +75,7 @@ export default function TeamView() {
       });
       if (res.ok) {
         sessionStorage.setItem('isAdmin', 'true');
+        sessionStorage.setItem('adminPassword', adminPassword);
         setIsAdmin(true);
         setShowUnlock(false);
         setAdminPassword('');
@@ -82,7 +101,7 @@ export default function TeamView() {
     try {
       const res = await fetch(`${API}/teams/${slug}/paid`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...adminHeaders() },
         body: JSON.stringify({ teamId, playerId, paid }),
       });
       if (!res.ok) throw new Error();
@@ -98,6 +117,51 @@ export default function TeamView() {
   }
 
   const RANK_POINTS = { S: 4, A: 3, B: 2, C: 1, Unranked: 0 };
+
+  function rosterPlayersNotOnAnyTeam() {
+    if (!roster?.length || !teams?.length) return [];
+    const onTeam = new Set();
+    for (const t of teams) {
+      for (const p of t.players) onTeam.add(p.id);
+    }
+    return roster.filter((p) => !onTeam.has(p.id));
+  }
+
+  async function handleAddPlayerToTeam(teamId, rosterPlayer) {
+    const snapshotTeams = teams.map((t) => ({ ...t, players: [...t.players] }));
+    const snapshotPool = [...playerPool];
+
+    const nextTeams = teams.map((t) => ({ ...t, players: [...t.players] }));
+    const team = nextTeams.find((t) => t.id === teamId);
+    if (!team) return;
+
+    const newPlayer = {
+      id: rosterPlayer.id,
+      name: rosterPlayer.name,
+      ranking: rosterPlayer.ranking,
+      image: rosterPlayer.image,
+      points: RANK_POINTS[rosterPlayer.ranking] ?? 0,
+      paid: false,
+    };
+    team.players.push(newPlayer);
+    const nextPool = playerPool.filter((p) => p.id !== rosterPlayer.id);
+
+    setTeams(nextTeams);
+    setPlayerPool(nextPool);
+
+    try {
+      const res = await fetch(`${API}/teams/${slug}/players`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...adminHeaders() },
+        body: JSON.stringify({ teams: nextTeams, playerPool: nextPool }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setTeams(snapshotTeams);
+      setPlayerPool(snapshotPool);
+    }
+    setAddToTeamId(null);
+  }
 
   async function handleReplaceWith(teamId, outPlayer, inPlayer) {
     const nextTeams = teams.map((t) => ({ ...t, players: [...t.players] }));
@@ -124,7 +188,7 @@ export default function TeamView() {
     try {
       await fetch(`${API}/teams/${slug}/players`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...adminHeaders() },
         body: JSON.stringify({ teams: nextTeams, playerPool: nextPool }),
       });
     } catch {
@@ -158,6 +222,8 @@ export default function TeamView() {
 
   const totalPlayers = teams.reduce((n, t) => n + t.players.length, 0);
   const paidCount = teams.reduce((n, t) => n + t.players.filter((p) => p.paid).length, 0);
+
+  const playersAvailableToAdd = addToTeamId ? rosterPlayersNotOnAnyTeam() : [];
 
   return (
     <div className={styles.page}>
@@ -196,6 +262,48 @@ export default function TeamView() {
         </div>
       )}
 
+      {addToTeamId && (
+        <div className={styles.modalOverlay} onClick={() => setAddToTeamId(null)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 className={styles.modalTitle}>
+              Add player to {teams.find((t) => t.id === addToTeamId)?.name ?? 'team'}
+            </h2>
+            <p className={styles.hint}>
+              Choose someone from the roster who is not on a team yet (including the pool). They are appended to this team.
+            </p>
+            <ul className={styles.poolList}>
+              {playersAvailableToAdd.length === 0 ? (
+                <li className={styles.hint}>Everyone on the roster is already on a team.</li>
+              ) : (
+                playersAvailableToAdd.map((rp) => (
+                  <li key={rp.id} className={styles.poolItem}>
+                    <button
+                      type="button"
+                      className={styles.poolBtn}
+                      data-rank={rp.ranking}
+                      onClick={() => handleAddPlayerToTeam(addToTeamId, rp)}
+                    >
+                      {rp.image ? (
+                        <img src={rp.image} alt="" className={styles.avatar} />
+                      ) : (
+                        <span className={styles.avatarPlaceholder} />
+                      )}
+                      <span>{rp.name}</span>
+                      <em>{rp.ranking}</em>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+            <div className={styles.modalActions}>
+              <button type="button" className={styles.btn} onClick={() => setAddToTeamId(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showUnlock && (
         <div className={styles.modalOverlay} onClick={() => setShowUnlock(false)}>
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -222,7 +330,11 @@ export default function TeamView() {
       )}
 
       <header className={styles.header}>
-        <Link to="/" className={styles.back}>← Back to Balancer</Link>
+        <div className={styles.topLinks}>
+          <Link to="/" className={styles.back}>← Balancer</Link>
+          <Link to="/sessions" className={styles.back}>Sessions</Link>
+          <Link to="/pay" className={styles.back}>Pay</Link>
+        </div>
         <h1 className={styles.title}>Teams — {date}</h1>
         <div className={styles.headerMeta}>
           <span className={styles.paidSummary}>{paidCount} / {totalPlayers} paid</span>
@@ -237,7 +349,11 @@ export default function TeamView() {
             <button
               type="button"
               className={styles.adminBtn}
-              onClick={() => { sessionStorage.removeItem('isAdmin'); setIsAdmin(false); }}
+              onClick={() => {
+                sessionStorage.removeItem('isAdmin');
+                sessionStorage.removeItem('adminPassword');
+                setIsAdmin(false);
+              }}
             >
               Admin — lock
             </button>
@@ -252,7 +368,18 @@ export default function TeamView() {
       <div className={styles.teamsGrid}>
         {teams.map((team) => (
           <div key={team.id} className={styles.teamCard}>
-            <h2 className={styles.teamName}>{team.name}</h2>
+            <div className={styles.teamCardHeader}>
+              <h2 className={styles.teamName}>{team.name}</h2>
+              {isAdmin && (
+                <button
+                  type="button"
+                  className={styles.addTeamBtn}
+                  onClick={() => setAddToTeamId(team.id)}
+                >
+                  Add player
+                </button>
+              )}
+            </div>
             <ul className={styles.teamList}>
               {team.players.map((p) => (
                 <li
@@ -264,7 +391,7 @@ export default function TeamView() {
                   ) : (
                     <span className={styles.avatarPlaceholder} />
                   )}
-                  <span className={styles.playerName}>{p.name}</span>
+                  <Link to={profilePathForSessionPlayer(p, roster)} className={styles.playerName}>{p.name}</Link>
                   {isAdmin ? (
                     <span className={styles.playerActions}>
                       {playerPool.length > 0 && (

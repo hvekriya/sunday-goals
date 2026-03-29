@@ -1,29 +1,7 @@
-import { createClient } from '@supabase/supabase-js';
-import { Agent, fetch as undiciFetch } from 'undici';
 import { nanoid } from 'nanoid';
+import { getClient, assertSupabaseConfigured, hasSupabaseConfig } from './supabaseClient.js';
+import { getRosterPlayer } from './playersRepo.js';
 
-const supabaseUrl = process.env.SUPABASE_URL?.trim();
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-
-if (!supabaseUrl || !supabaseKey) {
-  console.error(
-    '[sessions] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Add them to .env in the project root (same folder as package.json).',
-  );
-}
-
-/** Force IPv4 — fixes many Node `TypeError: fetch failed` cases to Supabase on macOS. */
-const supabaseIpv4Agent = new Agent({ connect: { family: 4 } });
-
-function supabaseFetch(input, init) {
-  const opts = init && typeof init === 'object' ? { ...init } : {};
-  opts.dispatcher = supabaseIpv4Agent;
-  return undiciFetch(input, opts);
-}
-
-/** Set `SUPABASE_USE_NODE_FETCH=1` in .env to use Node’s built-in fetch (no Undici agent). Useful if IPv4 forcing breaks your network or to compare errors. */
-const useNodeBuiltinFetch = process.env.SUPABASE_USE_NODE_FETCH === '1';
-
-let supabaseClient = null;
 let lastUnreachableLogAt = 0;
 
 function isSupabaseUnreachable(err) {
@@ -33,7 +11,7 @@ function isSupabaseUnreachable(err) {
 
 function supabaseNetworkHint(err) {
   if (!isSupabaseUnreachable(err)) return '';
-  return ' Node could not reach Supabase. Confirm SUPABASE_URL in .env, VPN off, project not paused. This server uses IPv4-only HTTP to Supabase (undici).';
+  return ' Node could not reach Supabase. Confirm SUPABASE_URL in .env, VPN off, project not paused.';
 }
 
 function formatErrorChain(err) {
@@ -56,30 +34,7 @@ function logUnreachableOnce(label, err) {
   if (now - lastUnreachableLogAt < 15000) return;
   lastUnreachableLogAt = now;
   console.error(`[sessions] Supabase unreachable (${label}):\n${formatErrorChain(err)}`);
-  console.error('[sessions] Run: npm run check:supabase   (prints the same from a small test script)');
-  console.error('[sessions] Optional: set SUPABASE_USE_NODE_FETCH=1 in .env and restart to try Node fetch instead of Undici+IPv4.');
-}
-
-export function assertSupabaseConfigured() {
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error(
-      'Supabase is not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env at the project root.',
-    );
-  }
-}
-
-function getClient() {
-  assertSupabaseConfigured();
-  if (!supabaseClient) {
-    const options = useNodeBuiltinFetch
-      ? {}
-      : { global: { fetch: supabaseFetch } };
-    supabaseClient = createClient(supabaseUrl, supabaseKey, options);
-    if (useNodeBuiltinFetch) {
-      console.warn('[sessions] Using Node built-in fetch for Supabase (SUPABASE_USE_NODE_FETCH=1).');
-    }
-  }
-  return supabaseClient;
+  console.error('[sessions] Run: npm run check:supabase');
 }
 
 export async function saveSession(teams, playerPool = []) {
@@ -119,7 +74,7 @@ export async function saveSession(teams, playerPool = []) {
 }
 
 export async function getSessionForToday() {
-  if (!supabaseUrl || !supabaseKey) return null;
+  if (!hasSupabaseConfig()) return null;
   const today = new Date().toISOString().slice(0, 10);
   const { data, error } = await getClient()
     .from('team_sessions')
@@ -135,7 +90,7 @@ export async function getSessionForToday() {
 }
 
 export async function getSessionBySlug(slug) {
-  if (!supabaseUrl || !supabaseKey) return null;
+  if (!hasSupabaseConfig()) return null;
   const { data, error } = await getClient()
     .from('team_sessions')
     .select('*')
@@ -146,7 +101,7 @@ export async function getSessionBySlug(slug) {
 }
 
 export async function getRecentSessions(limit = 20) {
-  if (!supabaseUrl || !supabaseKey) return [];
+  if (!hasSupabaseConfig()) return [];
   const today = new Date().toISOString().slice(0, 10);
   const { data, error } = await getClient()
     .from('team_sessions')
@@ -157,6 +112,24 @@ export async function getRecentSessions(limit = 20) {
   if (error) {
     if (isSupabaseUnreachable(error)) {
       logUnreachableOnce('history', error);
+      return [];
+    }
+    throw new Error(`Failed to load sessions: ${error.message}${supabaseNetworkHint(error)}`);
+  }
+  return data || [];
+}
+
+/** All sessions (newest first), including today — for public sessions browser. */
+export async function listAllSessions(limit = 50) {
+  if (!hasSupabaseConfig()) return [];
+  const { data, error } = await getClient()
+    .from('team_sessions')
+    .select('slug, date, created_at, teams')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) {
+    if (isSupabaseUnreachable(error)) {
+      logUnreachableOnce('listAll', error);
       return [];
     }
     throw new Error(`Failed to load sessions: ${error.message}${supabaseNetworkHint(error)}`);
@@ -200,4 +173,58 @@ export async function updatePaidStatus(slug, teamId, playerId, paid) {
     .update({ teams })
     .eq('slug', slug);
   if (updateErr) throw new Error(`Failed to update: ${updateErr.message}${supabaseNetworkHint(updateErr)}`);
+}
+
+function normalizeHistoryName(n) {
+  return String(n || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Session appearances for a roster player: match current UUID on teams, or the same display name
+ * (case-insensitive) for older sessions that used sheet ids like p-1, p-2.
+ */
+export async function getAppearancesForPlayer(playerId) {
+  if (!hasSupabaseConfig()) return [];
+  const roster = await getRosterPlayer(playerId);
+  const nameKey = roster?.name ? normalizeHistoryName(roster.name) : '';
+
+  const { data: rows, error } = await getClient()
+    .from('team_sessions')
+    .select('slug, date, teams')
+    .order('date', { ascending: false });
+  if (error) {
+    if (isSupabaseUnreachable(error)) return [];
+    throw new Error(`Failed to load history: ${error.message}`);
+  }
+
+  const appearances = [];
+  const seen = new Set();
+
+  for (const row of rows || []) {
+    for (const team of row.teams || []) {
+      for (const p of team.players || []) {
+        const byId = String(p.id) === String(playerId);
+        const byName = Boolean(nameKey) && normalizeHistoryName(p.name) === nameKey;
+        if (!byId && !byName) continue;
+
+        const dedupeKey = `${row.slug}\0${team.id}\0${p.id}\0${p.name}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+
+        appearances.push({
+          slug: row.slug,
+          date: row.date,
+          teamId: team.id,
+          teamName: team.name,
+          paid: !!p.paid,
+          legacyNameMatch: byName && !byId,
+        });
+      }
+    }
+  }
+
+  return appearances;
 }

@@ -1,0 +1,106 @@
+.page {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.back {
+  display: inline-block;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  text-decoration: none;
+}
+
+.back:hover {
+  color: var(--accent);
+}
+
+.title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+  background: linear-gradient(135deg, #a5b4fc, #c4b5fd);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.sub {
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.75rem;
+  text-align: center;
+}
+
+.amount {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 1.25rem;
+  color: var(--text);
+}
+
+.monzoBtn {
+  display: inline-block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.875rem 1.25rem;
+  background: linear-gradient(135deg, #ff5c6c, #ff3355);
+  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+  border-radius: 10px;
+  text-decoration: none;
+  margin-bottom: 0.75rem;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.monzoBtn:hover {
+  filter: brightness(1.06);
+}
+
+.secondary {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.note {
+  margin: 1.5rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85em;
+}
