@@ -18,7 +18,12 @@ function supabaseFetch(input, init) {
   return undiciFetch(input, opts);
 }
 
-const useNodeBuiltinFetch = process.env.SUPABASE_USE_NODE_FETCH === '1';
+/**
+ * Local macOS/DNS issues sometimes need IPv4-only undici (below). Vercel/Lambda networking
+ * often hangs with that agent → 60s runtime timeout. Use default fetch on Vercel.
+ */
+const useNodeBuiltinFetch =
+  process.env.SUPABASE_USE_NODE_FETCH === '1' || process.env.VERCEL === '1';
 
 let supabaseClient = null;
 
@@ -43,8 +48,10 @@ export function getClient() {
   if (!supabaseClient) {
     const options = useNodeBuiltinFetch ? {} : { global: { fetch: supabaseFetch } };
     supabaseClient = createClient(supabaseUrl, supabaseKey, options);
-    if (useNodeBuiltinFetch) {
+    if (process.env.SUPABASE_USE_NODE_FETCH === '1') {
       console.warn('[supabase] Using Node built-in fetch (SUPABASE_USE_NODE_FETCH=1).');
+    } else if (process.env.VERCEL === '1') {
+      console.info('[supabase] Using default fetch on Vercel (avoid IPv4-only undici agent).');
     }
   }
   return supabaseClient;
