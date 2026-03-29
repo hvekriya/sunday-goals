@@ -9,6 +9,7 @@ export default function PlayerProfilePage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isAdmin] = useState(() => sessionStorage.getItem('isAdmin') === 'true');
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +61,9 @@ export default function PlayerProfilePage() {
         )}
         <div>
           <h1 className={styles.title}>{player.name}</h1>
-          <span className={styles.rank} data-rank={player.ranking}>{player.ranking}</span>
+          {isAdmin && (
+            <span className={styles.rank} data-rank={player.ranking}>{player.ranking}</span>
+          )}
           {player.notes && <p className={styles.notes}>{player.notes}</p>}
         </div>
       </header>

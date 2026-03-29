@@ -636,9 +636,11 @@ export default function Home() {
                       </button>
                     )}
                   </div>
-                  <p className={styles.teamPoints}>
-                    {team.players.reduce((s, p) => s + (p.points ?? 0), 0)} pts
-                  </p>
+                  {isAdmin && (
+                    <p className={styles.teamPoints}>
+                      {team.players.reduce((s, p) => s + (p.points ?? 0), 0)} pts
+                    </p>
+                  )}
                   <ul className={styles.teamList}>
                     {team.players.map((p) => (
                       <li
@@ -648,7 +650,7 @@ export default function Home() {
                           isAdmin && dragOverPlayer === p.id ? styles.teamPlayerOver : '',
                           p.paid ? styles.teamPlayerPaid : '',
                         ].join(' ')}
-                        data-rank={p.ranking}
+                        data-rank={isAdmin ? p.ranking : undefined}
                         draggable={isAdmin}
                         onDragStart={isAdmin ? () => handleDragStart(p.id, team.id) : undefined}
                         onDragEnd={isAdmin ? handleDragEnd : undefined}
@@ -659,7 +661,7 @@ export default function Home() {
                         {isAdmin && <span className={styles.dragHandle} aria-hidden>⠿</span>}
                         {p.image ? <img src={p.image} alt="" className={styles.avatar} /> : <span className={styles.avatarPlaceholder} />}
                         <Link to={profilePathForSessionPlayer(p, players)} className={styles.playerNameCell}>{p.name}</Link>
-                        <span className={styles.rank}>{p.ranking}</span>
+                        {isAdmin && <span className={styles.rank}>{p.ranking}</span>}
                         {isAdmin ? (
                           <span className={styles.playerActions}>
                             {playerPool.length > 0 && (

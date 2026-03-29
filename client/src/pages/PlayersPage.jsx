@@ -144,7 +144,9 @@ export default function PlayersPage() {
 
       <header className={styles.header}>
         <h1 className={styles.title}>Players</h1>
-        <p className={styles.sub}>Profiles and rankings. Anyone can browse; only admins can edit.</p>
+        <p className={styles.sub}>
+          Player profiles. Anyone can browse; rank badges are only shown when you use admin login. Only admins can edit.
+        </p>
         <div className={styles.toolbar}>
           {isAdmin ? (
             <>
@@ -241,7 +243,9 @@ export default function PlayersPage() {
                 {p.image ? <img src={p.image} alt="" className={styles.avatar} /> : <span className={styles.avatarPh} />}
                 <div className={styles.cardBody}>
                   <span className={styles.pname}>{p.name}</span>
-                  <span className={styles.prank} data-rank={p.ranking}>{p.ranking}</span>
+                  {isAdmin && (
+                    <span className={styles.prank} data-rank={p.ranking}>{p.ranking}</span>
+                  )}
                 </div>
               </Link>
               {isAdmin && (
