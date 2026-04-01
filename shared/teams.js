@@ -13,7 +13,6 @@ export function createBalancedTeams(players, numTeams) {
     points: RANK_POINTS[p.ranking] ?? 0,
   }));
 
-  // Sort by points descending so we snake-draft
   list.sort((a, b) => b.points - a.points);
 
   const teams = Array.from({ length: numTeams }, (_, i) => ({
@@ -23,7 +22,6 @@ export function createBalancedTeams(players, numTeams) {
     totalPoints: 0,
   }));
 
-  // Snake draft: 0,1,...,n-1 then n-1,...,0
   let teamIndex = 0;
   let step = 1;
   for (const player of list) {
@@ -39,10 +37,10 @@ export function createBalancedTeams(players, numTeams) {
     }
   }
 
-  return teams.map(({ id, name, players, totalPoints }) => ({
+  return teams.map(({ id, name, players: pl, totalPoints }) => ({
     id,
     name,
-    players: players.map(({ id: pid, name: n, ranking }) => ({
+    players: pl.map(({ id: pid, name: n, ranking }) => ({
       id: pid,
       name: n,
       ranking,

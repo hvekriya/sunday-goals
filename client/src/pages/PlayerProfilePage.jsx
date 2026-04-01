@@ -3,7 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import styles from './PlayerProfilePage.module.css';
 import { playerFlairLabel } from '../lib/playerFlair';
 import PlayerAvatar from '../components/PlayerAvatar';
-import CartoonPickerModal from '../components/CartoonPickerModal';
+import { refreshAdminFromApi } from '../lib/adminHeaders';
+import { supabaseBrowser } from '../lib/supabaseBrowser';
 
 const API = '/api';
 
@@ -12,8 +13,18 @@ export default function PlayerProfilePage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [isAdmin] = useState(() => sessionStorage.getItem('isAdmin') === 'true');
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    refreshAdminFromApi(setIsAdmin);
+    if (!supabaseBrowser) return undefined;
+    const {
+      data: { subscription },
+    } = supabaseBrowser.auth.onAuthStateChange(() => {
+      refreshAdminFromApi(setIsAdmin);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,43 +68,25 @@ export default function PlayerProfilePage() {
     <div className={styles.page}>
       <Link to="/players" className={styles.back}>← Players</Link>
 
-      {pickerOpen && (
-        <CartoonPickerModal
-          player={player}
-          onClose={() => setPickerOpen(false)}
-          onSaved={() => {
-            const key = encodeURIComponent(slug || '');
-            fetch(`${API}/roster/${key}/history`)
-              .then(async (r) => {
-                const json = await r.json();
-                if (r.ok && json?.player) setData(json);
-              })
-              .catch(() => {});
-          }}
-        />
-      )}
-
       <header className={styles.header}>
         <div className={styles.heroBlock}>
           <PlayerAvatar
             playerId={player.id}
-            avatarPick={player.avatar_pick}
-            avatarSeed={player.avatar_seed}
+            name={player.name}
             alt={player.name}
             className={styles.hero}
             variant="hero"
           />
-          <button type="button" className={styles.cartoonBtn} onClick={() => setPickerOpen(true)}>
-            Change cartoon
-          </button>
         </div>
         <div>
-          <h1 className={styles.title}>{player.name}</h1>
-          {isAdmin ? (
-            <span className={styles.rank} data-rank={player.ranking}>{player.ranking}</span>
-          ) : (
-            <span className={styles.playerFlair}>{playerFlairLabel(player.id)}</span>
-          )}
+          <div className={styles.titleBlock}>
+            <h1 className={styles.title}>{player.name}</h1>
+            {isAdmin ? (
+              <span className={styles.rank} data-rank={player.ranking}>{player.ranking}</span>
+            ) : (
+              <span className={styles.playerFlair}>{playerFlairLabel(player.id)}</span>
+            )}
+          </div>
           {player.notes && <p className={styles.notes}>{player.notes}</p>}
         </div>
       </header>

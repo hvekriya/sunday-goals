@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+  // Load VITE_* from repo root `.env` (same file as server `SUPABASE_*`).
+  envDir: '..',
   plugins: [react()],
   build: {
     outDir: '../public',

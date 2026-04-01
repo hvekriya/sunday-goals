@@ -2,11 +2,11 @@ import { createClient } from '@supabase/supabase-js';
 import { Agent, fetch as undiciFetch } from 'undici';
 
 const supabaseUrl = process.env.SUPABASE_URL?.trim();
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY?.trim();
 
-if (!supabaseUrl || !supabaseKey) {
+if (!supabaseUrl || !supabaseAnonKey) {
   console.error(
-    '[supabase] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env (project root).',
+    '[supabase] Missing SUPABASE_URL or SUPABASE_ANON_KEY in .env (project root).',
   );
 }
 
@@ -18,37 +18,58 @@ function supabaseFetch(input, init) {
   return undiciFetch(input, opts);
 }
 
-/**
- * Local macOS/DNS issues sometimes need IPv4-only undici (below). Vercel/Lambda networking
- * often hangs with that agent → 60s runtime timeout. Use default fetch on Vercel.
- */
 const useNodeBuiltinFetch =
   process.env.SUPABASE_USE_NODE_FETCH === '1' || process.env.VERCEL === '1';
 
-let supabaseClient = null;
+function clientOptions() {
+  return useNodeBuiltinFetch ? {} : { global: { fetch: supabaseFetch } };
+}
+
+let anonClient = null;
 
 export function assertSupabaseConfigured() {
-  if (!supabaseUrl || !supabaseKey) {
+  if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
-      'Supabase is not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env at the project root.',
+      'Supabase is not configured: set SUPABASE_URL and SUPABASE_ANON_KEY in .env at the project root.',
     );
   }
 }
 
 export function hasSupabaseConfig() {
-  return Boolean(supabaseUrl && supabaseKey);
+  return Boolean(supabaseUrl && supabaseAnonKey);
 }
 
-export function getClient() {
+/** Public reads (RLS: anon policies where applicable). */
+export function getAnonClient() {
   assertSupabaseConfigured();
-  if (!supabaseClient) {
-    const options = useNodeBuiltinFetch ? {} : { global: { fetch: supabaseFetch } };
-    supabaseClient = createClient(supabaseUrl, supabaseKey, options);
+  if (!anonClient) {
+    anonClient = createClient(supabaseUrl, supabaseAnonKey, clientOptions());
     if (process.env.SUPABASE_USE_NODE_FETCH === '1') {
       console.warn('[supabase] Using Node built-in fetch (SUPABASE_USE_NODE_FETCH=1).');
-    } else if (process.env.VERCEL === '1') {
-      console.info('[supabase] Using default fetch on Vercel (avoid IPv4-only undici agent).');
     }
   }
-  return supabaseClient;
+  return anonClient;
+}
+
+/**
+ * User-scoped client: PostgREST runs as that user; RLS + is_app_admin() apply.
+ * @param {string} accessToken — Supabase Auth access_token (JWT)
+ */
+export function createUserClient(accessToken) {
+  assertSupabaseConfigured();
+  const base = clientOptions();
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    ...base,
+    global: {
+      ...(base.global || {}),
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  });
+}
+
+/** @deprecated use getAnonClient */
+export function getClient() {
+  return getAnonClient();
 }

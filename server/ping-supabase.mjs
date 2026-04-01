@@ -6,7 +6,7 @@ import './load-env.js';
 import { Agent, fetch as undiciFetch } from 'undici';
 
 const url = process.env.SUPABASE_URL?.trim().replace(/\/$/, '');
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+const key = process.env.SUPABASE_ANON_KEY?.trim();
 
 function chain(err, indent = '') {
   if (!err) return '';
@@ -30,7 +30,7 @@ async function tryFetch(name, doFetch) {
 }
 
 if (!url || !key) {
-  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env (project root).');
+  console.error('Missing SUPABASE_URL or SUPABASE_ANON_KEY in .env (project root).');
   process.exit(1);
 }
 

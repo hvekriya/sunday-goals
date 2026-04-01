@@ -1,63 +1,34 @@
-import { useEffect, useMemo, useState } from 'react';
-import { cartoonUrlForPlayer } from '../../../shared/cartoonPresets.js';
-
-const BLANK_IMG =
-  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+import styles from './PlayerAvatar.module.css';
+import { hueForString, initialsFromName } from '../lib/playerInitials';
 
 /**
- * DiceBear cartoon from roster avatar_pick / avatar_seed or auto pick from player id.
- * @param {string} props.playerId
- * @param {number | null | undefined} props.avatarPick
- * @param {string | null | undefined} props.avatarSeed
- * @param {string} props.className
+ * Initials badge derived from player name (e.g. "Haresh V" → HV).
+ * @param {string} props.name — display name (falls back to alt)
+ * @param {string} [props.playerId] — used for stable background hue
+ * @param {string} props.className — often page `styles.avatar` / `styles.hero` for size
  * @param {string} [props.alt]
  * @param {'list' | 'hero'} [props.variant]
  */
 export default function PlayerAvatar({
+  name,
   playerId,
-  avatarPick,
-  avatarSeed,
   className = '',
   alt = '',
   variant = 'list',
 }) {
-  const key = playerId ?? 'unknown';
-  const sizePx = variant === 'hero' ? 200 : 96;
-
-  const primary = useMemo(
-    () => cartoonUrlForPlayer(key, avatarPick, avatarSeed, sizePx),
-    [key, avatarPick, avatarSeed, sizePx],
-  );
-
-  const fallback = useMemo(
-    () => cartoonUrlForPlayer(`${key}-fb`, null, null, sizePx),
-    [key, sizePx],
-  );
-
-  const [useFallback, setUseFallback] = useState(false);
-
-  useEffect(() => {
-    setUseFallback(false);
-  }, [primary]);
-
-  const effectiveSrc = useFallback ? fallback : primary;
+  const label = String(name || alt || '').trim();
+  const initials = initialsFromName(label);
+  const hue = hueForString(playerId || label || alt);
+  const sizeMod = variant === 'hero' ? styles.hero : styles.list;
 
   return (
-    <img
-      key={effectiveSrc}
-      src={effectiveSrc}
-      alt={alt}
-      className={className}
-      loading="lazy"
-      decoding="async"
-      onError={(e) => {
-        if (!useFallback) {
-          setUseFallback(true);
-          return;
-        }
-        e.currentTarget.onerror = null;
-        e.currentTarget.src = BLANK_IMG;
-      }}
-    />
+    <span
+      className={`${styles.root} ${sizeMod} ${className}`.trim()}
+      style={{ '--avatar-hue': String(hue) }}
+      role="img"
+      aria-label={label || initials}
+    >
+      {initials}
+    </span>
   );
 }

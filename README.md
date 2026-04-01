@@ -15,6 +15,23 @@ Web app that loads players from a Google Spreadsheet (name, ranking, picture) an
    - The full sheet URL, or  
    - Just the spreadsheet ID (the long string in the URL: `https://docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit`).
 
+## Environment variables
+
+Copy `.env.example` to `.env` at the repo root and set:
+
+- **`SUPABASE_URL`** / **`SUPABASE_ANON_KEY`** — used by the API (anon key + user JWT for admin writes; RLS applies).
+- **`VITE_SUPABASE_URL`** / **`VITE_SUPABASE_ANON_KEY`** — same project URL and anon key for the React app (Supabase Auth sign-in).
+
+Do **not** put the service role key in production frontends or expose it to the browser. Optional **`SUPABASE_SERVICE_ROLE_KEY`** is only for local scripts if you add them.
+
+## Admin authentication
+
+Admins sign in with **Supabase Auth** (email + password). Only users listed in **`public.app_admins`** (migration `supabase/migrations/005_supabase_auth_rls.sql`) can perform roster and team mutations.
+
+1. Apply the SQL migration in the Supabase SQL editor (or CLI).
+2. In the Supabase dashboard, create Auth users for your admins.
+3. Insert their `auth.users.id` into `public.app_admins` (see comments in the migration).
+
 ## Run locally
 
 ```bash
@@ -26,12 +43,7 @@ npm run dev
 - Frontend: http://localhost:5173  
 - API: http://localhost:3001  
 
-Then:
-
-1. Paste your spreadsheet ID or full Google Sheet URL (and sheet name if not “Sheet1”).
-2. Click **Load players**.
-3. Set **Number of teams** and click **Generate teams**.
-4. Copy the **unique URL** (e.g. `http://localhost:5173/t/abc123xyz`) to share today’s teams.
+Use **Players** to manage the roster, **Admin login** on Home / Players / team pages to unlock generate/edit/paid actions, then generate teams and share the `/t/<slug>` link.
 
 ## Production build
 

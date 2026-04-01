@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import styles from './PlayersPage.module.css';
-import { adminHeaders } from '../lib/adminHeaders';
+import {
+  adminAuthHeaders,
+  refreshAdminFromApi,
+  signInAdmin,
+  signOutAdmin,
+} from '../lib/adminHeaders';
+import { supabaseBrowser } from '../lib/supabaseBrowser';
 import { profilePathForRosterPlayer } from '../lib/playerProfilePath';
 import { playerFlairLabel } from '../lib/playerFlair';
 import PlayerAvatar from '../components/PlayerAvatar';
-import CartoonPickerModal from '../components/CartoonPickerModal';
 
 const API = '/api';
 const RANKS = ['S', 'A', 'B', 'C', 'Unranked'];
@@ -13,14 +18,15 @@ const RANKS = ['S', 'A', 'B', 'C', 'Unranked'];
 export default function PlayersPage() {
   const [players, setPlayers] = useState(null);
   const [error, setError] = useState('');
-  const [isAdmin] = useState(() => sessionStorage.getItem('isAdmin') === 'true');
+  const [isAdmin, setIsAdmin] = useState(false);
   const [showUnlock, setShowUnlock] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
+  const [adminLoading, setAdminLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [editor, setEditor] = useState(null);
-  const [pickerPlayer, setPickerPlayer] = useState(null);
 
   async function load() {
     setError('');
@@ -36,29 +42,38 @@ export default function PlayersPage() {
   }
 
   useEffect(() => {
+    refreshAdminFromApi(setIsAdmin);
+    if (!supabaseBrowser) return undefined;
+    const {
+      data: { subscription },
+    } = supabaseBrowser.auth.onAuthStateChange(() => {
+      refreshAdminFromApi(setIsAdmin);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
     load();
   }, []);
 
   async function handleUnlock(e) {
     e.preventDefault();
     setAdminError('');
+    setAdminLoading(true);
     try {
-      const res = await fetch(`${API}/admin/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: adminPassword }),
-      });
-      if (res.ok) {
-        sessionStorage.setItem('isAdmin', 'true');
-        sessionStorage.setItem('adminPassword', adminPassword);
+      const out = await signInAdmin(adminEmail, adminPassword);
+      if (out.ok) {
+        setIsAdmin(true);
         setShowUnlock(false);
         setAdminPassword('');
-        window.location.reload();
+        setAdminEmail('');
       } else {
-        setAdminError('Wrong password.');
+        setAdminError(out.error || 'Sign-in failed.');
       }
     } catch {
       setAdminError('Could not reach server.');
+    } finally {
+      setAdminLoading(false);
     }
   }
 
@@ -88,7 +103,7 @@ export default function PlayersPage() {
       const url = editor.id ? `${API}/roster/${editor.id}` : `${API}/roster`;
       const res = await fetch(url, {
         method: editor.id ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json', ...adminHeaders() },
+        headers: { 'Content-Type': 'application/json', ...(await adminAuthHeaders()) },
         body,
       });
       const data = await res.json();
@@ -108,7 +123,7 @@ export default function PlayersPage() {
     try {
       const res = await fetch(`${API}/roster/${id}`, {
         method: 'DELETE',
-        headers: adminHeaders(),
+        headers: await adminAuthHeaders(),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Delete failed');
@@ -128,17 +143,28 @@ export default function PlayersPage() {
             <h2 className={styles.modalTitle}>Admin login</h2>
             <form onSubmit={handleUnlock}>
               <input
+                type="email"
+                autoComplete="username"
+                className={styles.input}
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="Admin email"
+                autoFocus
+              />
+              <input
                 type="password"
+                autoComplete="current-password"
                 className={styles.input}
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Admin password"
-                autoFocus
+                placeholder="Password"
               />
               {adminError && <p className={styles.modalError}>{adminError}</p>}
               <div className={styles.modalActions}>
                 <button type="button" className={styles.btn} onClick={() => setShowUnlock(false)}>Cancel</button>
-                <button type="submit" className={styles.btnPrimary}>Unlock</button>
+                <button type="submit" className={styles.btnPrimary} disabled={adminLoading}>
+                  {adminLoading ? 'Signing in…' : 'Unlock'}
+                </button>
               </div>
             </form>
           </div>
@@ -156,10 +182,9 @@ export default function PlayersPage() {
               <button
                 type="button"
                 className={styles.btn}
-                onClick={() => {
-                  sessionStorage.removeItem('isAdmin');
-                  sessionStorage.removeItem('adminPassword');
-                  window.location.reload();
+                onClick={async () => {
+                  await signOutAdmin();
+                  setIsAdmin(false);
                 }}
               >
                 Lock admin
@@ -172,24 +197,9 @@ export default function PlayersPage() {
           )}
         </div>
         <p className={styles.sub}>
-          Cartoon faces use{' '}
-          <a href="https://www.dicebear.com/" target="_blank" rel="noopener noreferrer">
-            DiceBear
-          </a>
-          {' '}
-          (SVG, curated styles). Anyone can pick a style or set optional <strong>face text</strong> to vary the look — no uploads. Admins edit name/rank with <strong>Edit</strong>.
+          Avatars show <strong>initials</strong> from each name (e.g. Haresh V → HV). Admins edit name and rank with <strong>Edit</strong>.
         </p>
       </header>
-
-      {pickerPlayer && (
-        <CartoonPickerModal
-          player={pickerPlayer}
-          onClose={() => setPickerPlayer(null)}
-          onSaved={() => {
-            load();
-          }}
-        />
-      )}
 
       {error && <div className={styles.error}>{error}</div>}
 
@@ -244,7 +254,7 @@ export default function PlayersPage() {
             No players returned for this app&apos;s Supabase project. The roster is empty in the database this server is using.
           </p>
           <p className={styles.muted}>
-            If you already imported rows elsewhere, the usual causes are: the project root <code className={styles.code}>.env</code> points at a different Supabase project than the one you imported into; <code className={styles.code}>SUPABASE_SERVICE_ROLE_KEY</code> is missing or wrong; or the import never ran against <code className={styles.code}>public.players</code>. Check the Supabase Table Editor for <code className={styles.code}>players</code> in the same project as <code className={styles.code}>SUPABASE_URL</code>, and run <code className={styles.code}>npm run check:supabase</code> from the repo root to verify connectivity.
+            If you already imported rows elsewhere, the usual causes are: the project root <code className={styles.code}>.env</code> points at a different Supabase project than the one you imported into; <code className={styles.code}>SUPABASE_ANON_KEY</code> is missing or wrong; or the import never ran against <code className={styles.code}>public.players</code>. Check the Supabase Table Editor for <code className={styles.code}>players</code> in the same project as <code className={styles.code}>SUPABASE_URL</code>, and run <code className={styles.code}>npm run check:supabase</code> from the repo root to verify connectivity.
           </p>
           <p className={styles.muted}>Admins can add players with <strong>Add player</strong> above after logging in.</p>
         </div>
@@ -257,8 +267,7 @@ export default function PlayersPage() {
               <Link to={profilePathForRosterPlayer(p)} className={styles.cardLink}>
                 <PlayerAvatar
                   playerId={p.id}
-                  avatarPick={p.avatar_pick}
-                  avatarSeed={p.avatar_seed}
+                  name={p.name}
                   alt={p.name}
                   className={styles.avatar}
                 />
@@ -271,9 +280,6 @@ export default function PlayersPage() {
                   )}
                 </div>
               </Link>
-              <button type="button" className={styles.cartoonPickBtn} onClick={() => setPickerPlayer(p)}>
-                Change cartoon
-              </button>
               {isAdmin && (
                 <div className={styles.cardActions}>
                   <button type="button" className={styles.linkBtn} onClick={() => openEdit(p)}>Edit</button>

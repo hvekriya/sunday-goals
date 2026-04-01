@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { getClient, assertSupabaseConfigured, hasSupabaseConfig } from './supabaseClient.js';
+import { getAnonClient, assertSupabaseConfigured, hasSupabaseConfig } from './supabaseClient.js';
 import { getRosterPlayerBySlugOrId } from './playersRepo.js';
 
 let lastUnreachableLogAt = 0;
@@ -37,10 +37,9 @@ function logUnreachableOnce(label, err) {
   console.error('[sessions] Run: npm run check:supabase');
 }
 
-export async function saveSession(teams, playerPool = []) {
+export async function saveSession(db, teams, playerPool = []) {
   assertSupabaseConfigured();
   const today = new Date().toISOString().slice(0, 10);
-  const db = getClient();
 
   const { data: existing, error: existingErr } = await db
     .from('team_sessions')
@@ -76,7 +75,7 @@ export async function saveSession(teams, playerPool = []) {
 export async function getSessionForToday() {
   if (!hasSupabaseConfig()) return null;
   const today = new Date().toISOString().slice(0, 10);
-  const { data, error } = await getClient()
+  const { data, error } = await getAnonClient()
     .from('team_sessions')
     .select('*')
     .eq('date', today)
@@ -91,7 +90,7 @@ export async function getSessionForToday() {
 
 export async function getSessionBySlug(slug) {
   if (!hasSupabaseConfig()) return null;
-  const { data, error } = await getClient()
+  const { data, error } = await getAnonClient()
     .from('team_sessions')
     .select('*')
     .eq('slug', slug)
@@ -103,7 +102,7 @@ export async function getSessionBySlug(slug) {
 export async function getRecentSessions(limit = 20) {
   if (!hasSupabaseConfig()) return [];
   const today = new Date().toISOString().slice(0, 10);
-  const { data, error } = await getClient()
+  const { data, error } = await getAnonClient()
     .from('team_sessions')
     .select('slug, date, created_at, teams')
     .neq('date', today)
@@ -122,7 +121,7 @@ export async function getRecentSessions(limit = 20) {
 /** All sessions (newest first), including today — for public sessions browser. */
 export async function listAllSessions(limit = 50) {
   if (!hasSupabaseConfig()) return [];
-  const { data, error } = await getClient()
+  const { data, error } = await getAnonClient()
     .from('team_sessions')
     .select('slug, date, created_at, teams')
     .order('created_at', { ascending: false })
@@ -137,20 +136,19 @@ export async function listAllSessions(limit = 50) {
   return data || [];
 }
 
-export async function updateTeams(slug, teams, playerPool) {
+export async function updateTeams(db, slug, teams, playerPool) {
   assertSupabaseConfigured();
   const payload = { teams };
   if (playerPool !== undefined) payload.player_pool = Array.isArray(playerPool) ? playerPool : [];
-  const { error } = await getClient()
+  const { error } = await db
     .from('team_sessions')
     .update(payload)
     .eq('slug', slug);
   if (error) throw new Error(`Failed to update teams: ${error.message}${supabaseNetworkHint(error)}`);
 }
 
-export async function updatePaidStatus(slug, teamId, playerId, paid) {
+export async function updatePaidStatus(db, slug, teamId, playerId, paid) {
   assertSupabaseConfigured();
-  const db = getClient();
   const { data: row, error: fetchErr } = await db
     .from('team_sessions')
     .select('teams')
@@ -191,7 +189,7 @@ export async function getAppearancesForPlayer(playerId) {
   const roster = await getRosterPlayerBySlugOrId(playerId);
   const nameKey = roster?.name ? normalizeHistoryName(roster.name) : '';
 
-  const { data: rows, error } = await getClient()
+  const { data: rows, error } = await getAnonClient()
     .from('team_sessions')
     .select('slug, date, teams')
     .order('date', { ascending: false });

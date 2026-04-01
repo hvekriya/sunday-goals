@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import styles from './TeamView.module.css';
-import { adminHeaders } from '../lib/adminHeaders';
+import {
+  adminAuthHeaders,
+  refreshAdminFromApi,
+  signInAdmin,
+  signOutAdmin,
+} from '../lib/adminHeaders';
+import { supabaseBrowser } from '../lib/supabaseBrowser';
 import { profilePathForSessionPlayer } from '../lib/playerProfilePath';
 import { playerFlairLabel } from '../lib/playerFlair';
 import PlayerAvatar from '../components/PlayerAvatar';
@@ -19,12 +25,24 @@ export default function TeamView() {
   const [replaceTarget, setReplaceTarget] = useState(null);
   const [addToTeamId, setAddToTeamId] = useState(null);
 
-  const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('isAdmin') === 'true');
+  const [isAdmin, setIsAdmin] = useState(false);
   const [showUnlock, setShowUnlock] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
   const [adminLoading, setAdminLoading] = useState(false);
   const [roster, setRoster] = useState([]);
+
+  useEffect(() => {
+    refreshAdminFromApi(setIsAdmin);
+    if (!supabaseBrowser) return undefined;
+    const {
+      data: { subscription },
+    } = supabaseBrowser.auth.onAuthStateChange(() => {
+      refreshAdminFromApi(setIsAdmin);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,19 +102,14 @@ export default function TeamView() {
     setAdminLoading(true);
     setAdminError('');
     try {
-      const res = await fetch(`${API}/admin/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: adminPassword }),
-      });
-      if (res.ok) {
-        sessionStorage.setItem('isAdmin', 'true');
-        sessionStorage.setItem('adminPassword', adminPassword);
+      const out = await signInAdmin(adminEmail, adminPassword);
+      if (out.ok) {
         setIsAdmin(true);
         setShowUnlock(false);
         setAdminPassword('');
+        setAdminEmail('');
       } else {
-        setAdminError('Wrong password. Try again.');
+        setAdminError(out.error || 'Sign-in failed.');
       }
     } catch {
       setAdminError('Could not reach server.');
@@ -117,7 +130,7 @@ export default function TeamView() {
     try {
       const res = await fetch(`${API}/teams/${slug}/paid`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...adminHeaders() },
+        headers: { 'Content-Type': 'application/json', ...(await adminAuthHeaders()) },
         body: JSON.stringify({ teamId, playerId, paid }),
       });
       if (!res.ok) throw new Error();
@@ -155,8 +168,6 @@ export default function TeamView() {
       id: rosterPlayer.id,
       name: rosterPlayer.name,
       ranking: rosterPlayer.ranking,
-      avatar_pick: rosterPlayer.avatar_pick ?? null,
-      avatar_seed: rosterPlayer.avatar_seed ?? null,
       points: RANK_POINTS[rosterPlayer.ranking] ?? 0,
       paid: false,
     };
@@ -169,7 +180,7 @@ export default function TeamView() {
     try {
       const res = await fetch(`${API}/teams/${slug}/players`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...adminHeaders() },
+        headers: { 'Content-Type': 'application/json', ...(await adminAuthHeaders()) },
         body: JSON.stringify({ teams: nextTeams, playerPool: nextPool }),
       });
       if (!res.ok) throw new Error();
@@ -190,8 +201,6 @@ export default function TeamView() {
       id: inPlayer.id,
       name: inPlayer.name,
       ranking: inPlayer.ranking,
-      avatar_pick: inPlayer.avatar_pick ?? null,
-      avatar_seed: inPlayer.avatar_seed ?? null,
       points: RANK_POINTS[inPlayer.ranking] ?? 0,
       paid: outPlayer.paid ?? false,
     };
@@ -199,8 +208,6 @@ export default function TeamView() {
       id: outPlayer.id,
       name: outPlayer.name,
       ranking: outPlayer.ranking,
-      avatar_pick: outPlayer.avatar_pick ?? null,
-      avatar_seed: outPlayer.avatar_seed ?? null,
     };
 
     team.players[idx] = newPlayer;
@@ -213,7 +220,7 @@ export default function TeamView() {
     try {
       await fetch(`${API}/teams/${slug}/players`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...adminHeaders() },
+        headers: { 'Content-Type': 'application/json', ...(await adminAuthHeaders()) },
         body: JSON.stringify({ teams: nextTeams, playerPool: nextPool }),
       });
     } catch {
@@ -250,24 +257,6 @@ export default function TeamView() {
 
   const playersAvailableToAdd = addToTeamId ? rosterPlayersNotOnAnyTeam() : [];
 
-  function avatarPickForTeamPlayer(p) {
-    const fromRoster = roster?.find((x) => x.id === p.id);
-    if (fromRoster) return fromRoster.avatar_pick ?? null;
-    return p?.avatar_pick ?? null;
-  }
-
-  function avatarSeedForTeamPlayer(p) {
-    const fromRoster = roster?.find((x) => x.id === p.id);
-    if (fromRoster) {
-      if (fromRoster.avatar_seed != null && String(fromRoster.avatar_seed).trim()) {
-        return String(fromRoster.avatar_seed).trim();
-      }
-      return undefined;
-    }
-    const fromP = p?.avatar_seed != null && String(p.avatar_seed).trim() ? String(p.avatar_seed).trim() : '';
-    return fromP || undefined;
-  }
-
   return (
     <div className={styles.page}>
 
@@ -287,8 +276,7 @@ export default function TeamView() {
                   >
                     <PlayerAvatar
                       playerId={poolPlayer.id}
-                      avatarPick={avatarPickForTeamPlayer(poolPlayer)}
-                      avatarSeed={avatarSeedForTeamPlayer(poolPlayer)}
+                      name={poolPlayer.name}
                       alt={poolPlayer.name}
                       className={styles.avatar}
                     />
@@ -330,8 +318,7 @@ export default function TeamView() {
                     >
                       <PlayerAvatar
                         playerId={rp.id}
-                        avatarPick={rp.avatar_pick}
-                        avatarSeed={rp.avatar_seed}
+                        name={rp.name}
                         alt={rp.name}
                         className={styles.avatar}
                       />
@@ -357,12 +344,21 @@ export default function TeamView() {
             <h2 className={styles.modalTitle}>Admin login</h2>
             <form onSubmit={handleUnlock}>
               <input
+                type="email"
+                autoComplete="username"
+                placeholder="Admin email"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                className={styles.input}
+                autoFocus
+              />
+              <input
                 type="password"
-                placeholder="Enter admin password"
+                autoComplete="current-password"
+                placeholder="Password"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
                 className={styles.input}
-                autoFocus
               />
               {adminError && <p className={styles.modalError}>{adminError}</p>}
               <div className={styles.modalActions}>
@@ -396,9 +392,8 @@ export default function TeamView() {
             <button
               type="button"
               className={styles.adminBtn}
-              onClick={() => {
-                sessionStorage.removeItem('isAdmin');
-                sessionStorage.removeItem('adminPassword');
+              onClick={async () => {
+                await signOutAdmin();
                 setIsAdmin(false);
               }}
             >
@@ -436,17 +431,17 @@ export default function TeamView() {
                 >
                   <PlayerAvatar
                     playerId={p.id}
-                    avatarPick={avatarPickForTeamPlayer(p)}
-                    avatarSeed={avatarSeedForTeamPlayer(p)}
+                    name={p.name}
                     alt={p.name}
                     className={styles.avatar}
                   />
-                  <Link to={profilePathForSessionPlayer(p, roster)} className={styles.playerName}>{p.name}</Link>
-                  {isAdmin ? (
-                    <span className={styles.rankBadge}>{p.ranking}</span>
-                  ) : (
-                    <span className={styles.playerFlair}>{playerFlairLabel(p.id)}</span>
-                  )}
+                  <div className={styles.playerNameStack}>
+                    <Link to={profilePathForSessionPlayer(p, roster)} className={styles.playerName}>{p.name}</Link>
+                    {!isAdmin && (
+                      <span className={styles.playerFlair}>{playerFlairLabel(p.id)}</span>
+                    )}
+                  </div>
+                  {isAdmin && <span className={styles.rankBadge}>{p.ranking}</span>}
                   {isAdmin ? (
                     <span className={styles.playerActions}>
                       {playerPool.length > 0 && (

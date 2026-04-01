@@ -1,9 +1,4 @@
-import { getClient, assertSupabaseConfigured } from './supabaseClient.js';
-import {
-  isValidAvatarPick,
-  CARTOON_AVATAR_PRESET_COUNT,
-  normalizeAvatarSeedForSave,
-} from '../shared/cartoonPresets.js';
+import { getAnonClient, assertSupabaseConfigured } from './supabaseClient.js';
 
 const RANKINGS = new Set(['S', 'A', 'B', 'C', 'Unranked']);
 
@@ -29,8 +24,7 @@ export function slugifyName(name) {
   return s || 'player';
 }
 
-async function allocateUniqueSlug(name, excludePlayerId) {
-  const client = getClient();
+async function allocateUniqueSlug(name, excludePlayerId, client) {
   const base = slugifyName(name);
   let candidate = base;
   for (let n = 2; n < 5000; n += 1) {
@@ -43,70 +37,41 @@ async function allocateUniqueSlug(name, excludePlayerId) {
 }
 
 function rowToPlayer(row) {
-  const rawSeed = row.avatar_seed != null ? String(row.avatar_seed).trim() : '';
   return {
     id: row.id,
     slug: row.slug || undefined,
     name: row.name,
     ranking: row.ranking,
     notes: row.notes || undefined,
-    avatar_pick:
-      row.avatar_pick != null && Number.isInteger(Number(row.avatar_pick))
-        ? Number(row.avatar_pick)
-        : null,
-    avatar_seed: rawSeed || undefined,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 }
 
-const PLAYER_SELECT = 'id, slug, name, ranking, notes, avatar_pick, avatar_seed, created_at, updated_at';
+const PLAYER_SELECT = 'id, slug, name, ranking, notes, created_at, updated_at';
 
-async function backfillMissingSlugs(rows) {
-  const client = getClient();
-  const missing = (rows || []).filter((r) => !r.slug);
-  for (const r of missing) {
-    try {
-      const slug = await allocateUniqueSlug(r.name, r.id);
-      await client.from('players').update({ slug }).eq('id', r.id);
-      r.slug = slug;
-    } catch (e) {
-      console.error('[players] slug backfill failed for', r.id, e.message);
-    }
-  }
+/** Old DB objects or stale API builds may still reference dropped avatar columns. */
+function throwIfAvatarColumnError(error) {
+  const msg = String(error.message || '');
+  const details = String(error.details || '');
+  const blob = `${msg} ${details}`;
+  if (error.code !== '42703') return;
+  if (!/avatar_pick/i.test(blob) && !/avatar_seed/i.test(blob)) return;
+  const hint =
+    'The app no longer uses `avatar_pick` or `avatar_seed`. Deploy the latest API (roster queries omit those columns). If this error persists, remove DB policies/views/triggers that reference those columns — run `supabase/migrations/006_remove_avatar_columns_and_cartoon_rls.sql`. Do not add those columns via legacy `003_players_avatar_pick.sql`.';
+  console.error('[players]', hint);
+  throw new Error(hint);
 }
 
 export async function listRosterPlayers() {
   assertSupabaseConfigured();
-  const client = getClient();
+  const client = getAnonClient();
   let { data, error } = await client.from('players').select(PLAYER_SELECT).order('name', { ascending: true });
   if (error) {
+    throwIfAvatarColumnError(error);
     const msg = String(error.message || '');
     const details = String(error.details || '');
     const blob = `${msg} ${details}`;
-
-    // Must run before any broad "does not exist" check: missing column errors also contain that phrase.
-    if (
-      error.code === '42703' &&
-      /avatar_pick/i.test(blob) &&
-      (/does not exist/i.test(blob) || /not found/i.test(blob))
-    ) {
-      const hint =
-        'Add column `avatar_pick` on `public.players` (integer). Run supabase/migrations/003_players_avatar_pick.sql in the Supabase SQL editor.';
-      console.error('[players]', hint);
-      throw new Error(hint);
-    }
-
-    if (
-      error.code === '42703' &&
-      /avatar_seed/i.test(blob) &&
-      (/does not exist/i.test(blob) || /not found/i.test(blob))
-    ) {
-      const hint =
-        'Add column `avatar_seed` on `public.players` (text). Run supabase/migrations/004_players_avatar_seed.sql in the Supabase SQL editor.';
-      console.error('[players]', hint);
-      throw new Error(hint);
-    }
 
     if (
       error.code === '42703' ||
@@ -133,7 +98,6 @@ export async function listRosterPlayers() {
     throw new Error(`Failed to load roster: ${error.message}`);
   }
   data = data || [];
-  await backfillMissingSlugs(data);
   return data.map(rowToPlayer);
 }
 
@@ -143,25 +107,31 @@ export async function getRosterPlayerBySlugOrId(raw) {
   const key = decodeURIComponent(String(raw || '').trim());
   if (!key) return null;
 
-  const client = getClient();
+  const client = getAnonClient();
   if (isUuid(key)) {
     const { data, error } = await client.from('players').select(PLAYER_SELECT).eq('id', key).maybeSingle();
-    if (error) throw new Error(`Failed to load player: ${error.message}`);
+    if (error) {
+      throwIfAvatarColumnError(error);
+      throw new Error(`Failed to load player: ${error.message}`);
+    }
     return data ? rowToPlayer(data) : null;
   }
 
   const slug = key.toLowerCase();
   const { data, error } = await client.from('players').select(PLAYER_SELECT).eq('slug', slug).maybeSingle();
-  if (error) throw new Error(`Failed to load player: ${error.message}`);
+  if (error) {
+    throwIfAvatarColumnError(error);
+    throw new Error(`Failed to load player: ${error.message}`);
+  }
   return data ? rowToPlayer(data) : null;
 }
 
-export async function createRosterPlayer({ name, ranking, notes }) {
+export async function createRosterPlayer(db, { name, ranking, notes }) {
   assertSupabaseConfigured();
   const trimmed = (name || '').trim();
   if (!trimmed) throw new Error('name is required');
-  const slug = await allocateUniqueSlug(trimmed, null);
-  const { data, error } = await getClient()
+  const slug = await allocateUniqueSlug(trimmed, null, db);
+  const { data, error } = await db
     .from('players')
     .insert({
       name: trimmed,
@@ -175,7 +145,7 @@ export async function createRosterPlayer({ name, ranking, notes }) {
   return rowToPlayer(data);
 }
 
-export async function updateRosterPlayer(id, { name, ranking, notes }) {
+export async function updateRosterPlayer(db, id, { name, ranking, notes }) {
   assertSupabaseConfigured();
   if (!isUuid(String(id))) throw new Error('Player not found');
   const patch = { updated_at: new Date().toISOString() };
@@ -183,12 +153,12 @@ export async function updateRosterPlayer(id, { name, ranking, notes }) {
     const t = name.trim();
     if (!t) throw new Error('name cannot be empty');
     patch.name = t;
-    patch.slug = await allocateUniqueSlug(t, id);
+    patch.slug = await allocateUniqueSlug(t, id, db);
   }
   if (ranking !== undefined) patch.ranking = normalizeRanking(ranking);
   if (notes !== undefined) patch.notes = notes?.trim() || null;
 
-  const { data, error } = await getClient()
+  const { data, error } = await db
     .from('players')
     .update(patch)
     .eq('id', id)
@@ -199,54 +169,9 @@ export async function updateRosterPlayer(id, { name, ranking, notes }) {
   return rowToPlayer(data);
 }
 
-export async function deleteRosterPlayer(id) {
+export async function deleteRosterPlayer(db, id) {
   assertSupabaseConfigured();
   if (!isUuid(String(id))) throw new Error('Player not found');
-  const { error } = await getClient().from('players').delete().eq('id', id);
+  const { error } = await db.from('players').delete().eq('id', id);
   if (error) throw new Error(`Failed to delete player: ${error.message}`);
-}
-
-/**
- * Public: anyone can set curated cartoon pick and/or DiceBear seed (no auth).
- * @param {{ pick?: number | null, seed?: string | null }} body — include only fields to change
- */
-export async function updateRosterPlayerCartoon(id, body) {
-  assertSupabaseConfigured();
-  if (!isUuid(String(id))) throw new Error('Player not found');
-  const hasPick = Object.prototype.hasOwnProperty.call(body, 'pick');
-  const hasSeed = Object.prototype.hasOwnProperty.call(body, 'seed');
-  if (!hasPick && !hasSeed) throw new Error('Request must include pick and/or seed');
-
-  const patch = { updated_at: new Date().toISOString() };
-
-  if (hasPick) {
-    const { pick } = body;
-    if (pick === null) {
-      patch.avatar_pick = null;
-    } else {
-      const n = Number(pick);
-      if (!Number.isInteger(n) || !isValidAvatarPick(n)) {
-        throw new Error(`pick must be null or an integer 0..${CARTOON_AVATAR_PRESET_COUNT - 1}`);
-      }
-      patch.avatar_pick = n;
-    }
-  }
-
-  if (hasSeed) {
-    try {
-      patch.avatar_seed = normalizeAvatarSeedForSave(body.seed);
-    } catch (e) {
-      throw new Error(e.message || 'Invalid seed');
-    }
-  }
-
-  const { data, error } = await getClient()
-    .from('players')
-    .update(patch)
-    .eq('id', id)
-    .select(PLAYER_SELECT)
-    .maybeSingle();
-  if (error) throw new Error(`Failed to update avatar: ${error.message}`);
-  if (!data) throw new Error('Player not found');
-  return rowToPlayer(data);
 }

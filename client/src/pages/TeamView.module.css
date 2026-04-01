@@ -276,8 +276,6 @@
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  object-fit: cover;
-  background: var(--bg);
   flex-shrink: 0;
 }
 
@@ -289,8 +287,16 @@
   flex-shrink: 0;
 }
 
-.playerName {
+.playerNameStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
   flex: 1;
+  min-width: 0;
+}
+
+.playerName {
   color: var(--text);
   text-decoration: none;
   font-weight: 500;
@@ -302,6 +308,7 @@
 }
 
 .rankBadge {
+  margin-left: auto;
   font-size: 0.75rem;
   font-weight: 600;
   padding: 0.15rem 0.4rem;
@@ -316,14 +323,10 @@
 .teamPlayer[data-rank="Unranked"] .rankBadge { background: var(--rank-u); color: #fff; }
 
 .playerFlair {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  padding: 0.15rem 0.45rem;
-  border-radius: 4px;
-  flex-shrink: 0;
-  background: rgba(129, 140, 248, 0.12);
-  color: var(--accent);
-  border: 1px solid rgba(129, 140, 248, 0.35);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--text-muted);
 }
 
 .teamPlayerPaid {

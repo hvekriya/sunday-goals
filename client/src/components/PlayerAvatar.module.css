@@ -1,0 +1,24 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+  background: hsl(var(--avatar-hue, 210) 44% 42%);
+  border-radius: 50%;
+  user-select: none;
+}
+
+.list {
+  font-size: 0.625rem;
+}
+
+.hero {
+  font-size: clamp(1.75rem, 5vw, 2.25rem);
+  border-radius: 16px;
+}
